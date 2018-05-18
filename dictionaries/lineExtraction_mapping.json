@@ -1,0 +1,21 @@
+{
+  "Instruction": "Need to standardize Gerber PNG exports so for each body the measurements are always the same pixel count/length on the screen",
+  "760": "height_neck_back",
+  "765": "height_neck_back",
+  "670": "height_scapula",
+  "650": "height_armpit",
+  "540": "height_waist_side",
+  "545": "height_waist_side",
+  "445": "height_hip",
+  "410": "height_gluteal_fold",
+  "415": "height_gluteal_fold",
+  "250": "height_knee",
+  "255": "height_knee",
+  "170": "height_calf",
+  "175": "height_calf",
+  "45": "height_ankle",
+  "50": "height_ankle",
+  "65": "height_ankle_high",
+  "70": "height_ankle_high",
+  "75": "height_ankle_high"
+}
