@@ -5,24 +5,25 @@ import json
 
 ###############################
 
-Mapping_file = "/Users/theodoreseem/Desktop/Emoji2Code/dictionaries/curveImage_mapping.json"
-curveExtMap = "/Users/theodoreseem/Desktop/Emoji2Code/dictionaries/curveExtraction_mapping.json"
-images_Directory = "/Users/theodoreseem/Desktop/Emoji2Code/Hasy-images/"
+Mapping_file = "/Users/theodoreseem/res.Network/dictionaries/curveImage_mapping.json"
+curveExtMap = "/Users/theodoreseem/res.Network/dictionaries/curveExtraction_mapping.json"
+images_Directory = "/Users/theodoreseem/res.Network/Hasy-images/"
 degrees = 360
 distance = 200
 
+#Based on how many innputs in line-image mapping
+startNum = 30000
 ###############################
 
 
 def createMappingDictionary(cpts, images):
     outputFile = open(Mapping_file, "w")
     outputFile.write("{\n")
-    imgNo = 4000
-    for cp1 in cpts:
-        for cp2 in cpts:
-            mapping = "\"(%s, %s)\": \"%s\"," % (controlPointTypes[cp1],controlPointTypes[cp2], images[imgNo])
+    imgNum = startNum
+    for cp in cpts:
+            mapping = "\"(%s)\": \"%s\"," % (controlPointTypes[cp], images[imgNum])
             outputFile.write(mapping + "\n")
-            imgNo =  imgNo + 1
+            imgNum =  imgNum + 1
     outputFile.write("\"( , )\": \" \" \n")
     outputFile.write("}")
 

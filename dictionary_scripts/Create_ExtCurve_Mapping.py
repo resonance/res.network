@@ -4,10 +4,10 @@ import os
 
 ###############################
 
-Mapping_file = "/Users/theodoreseem/Desktop/Emoji2Code/dictionaries/curveExtraction_mapping.json"
-images_Directory = "/Users/theodoreseem/Desktop/Emoji2Code/CIFAR10-images/"
+Mapping_file = "/Users/theodoreseem/res.Network/dictionaries/curveExtraction_mapping.json"
+images_Directory = "/Users/theodoreseem/res.Network/CIFAR10-images/"
 degrees = 360
-distance = 200
+distance = 1000
 
 ###############################
 

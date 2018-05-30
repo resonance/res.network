@@ -13,9 +13,23 @@ from scipy.spatial import distance as dist
 from sympy import Matrix
 import scipy.ndimage, scipy.interpolate
 from PIL import Image
-
 from pylab import randn
+from scipy.signal import savgol_filter
+from scipy.interpolate import UnivariateSpline
+from sklearn.neighbors import NearestNeighbors
+from scipy import linalg
+from sklearn import mixture
 
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+
+from scipy.interpolate import splprep, splev
+
+numpy.set_printoptions(threshold=numpy.nan)
+
+DEBUG_FLAG = True
 
 lineImage_mapping = '/Users/theodoreseem/res.Network/dictionaries/Line-Image_mapping.json'
 curveImage_mapping = '/Users/theodoreseem/res.Network/dictionaries/curveImage_mapping.json'
@@ -65,6 +79,7 @@ class Feature:
     def __init__(self, x1, y1, x2, y2):
         self.x1 = x1; self.y1 = y1; self.x2 = x2; self.y2 = y2
         self.endpoints = (x1,y1),(x2,y2)
+
 class Line(Feature):
 
     orderNum = ...;
@@ -85,6 +100,7 @@ class Line(Feature):
         self.distance = my_round(int(math.sqrt((x2-x1)**2 + (y2-y1)**2)),5)
         self.orderNum = order
         self.endpoints = (x1,y1),(x2,y2)
+
 class Curve(Feature):
 
     orderNum = ...;
@@ -108,13 +124,29 @@ class Curve(Feature):
         self.orderNum = order;
         self.endpoints = (x1,y1),(x4,y4)
 
+class Point:
+
+    def __init__(self, x, y, cluster):
+        self.x = x; self.y = y; self.cluster = cluster
+
+def loadDictionaries():
+    with open(lineImage_mapping) as data_file:
+        lineImg_mapping = json.load(data_file); lineImg_mapping = defaultdict(lambda: "NO IMG", lineImg_mapping)
+    with open(curveImage_mapping) as data_file:
+        curveImg_mapping = json.load(data_file); curveImg_mapping = defaultdict(lambda: "NO IMG", curveImg_mapping)
+    with open(lineExt_mapping) as ext_file:
+        lExt_mapping = json.load(ext_file); lExt_mapping = defaultdict(lambda: "NO MEASURE", lExt_mapping)
+    with open(curveExt_mapping) as ext_file:
+        cExt_mapping = json.load(ext_file); cExt_mapping = defaultdict(lambda: "NO MEASURE", cExt_mapping)
+    return lineImg_mapping, curveImg_mapping, lExt_mapping, cExt_mapping
+
 def is_close(x1, y1, x2, y2, d):
     distance = int(math.sqrt((x2-x1)**2 + (y2-y1)**2))
     return(distance<d)
 
 def clean_Image(image):
+
     img = cv2.imread(image)
-    height, width, channels = img.shape
     img_border =  cv2.copyMakeBorder(img,25,25,25,25,cv2.BORDER_CONSTANT,value=255)
     height, width, channels = img_border.shape
     new_image = np.ones((height,width,3), np.uint8)*255
@@ -123,58 +155,44 @@ def clean_Image(image):
             if np.any(img_border[i,j] > 4):
                 img_border[i,j] = [255,255,255]
     gray = cv2.cvtColor(img_border,cv2.COLOR_BGR2GRAY)
-    img_conv = util.invert(gray)
     kernel = np.ones((5,5),np.uint8)
-    close = cv2.dilate(img_conv, kernel, iterations = 2)
-    img_conv = util.invert(close)
-    ret, thresh = cv2.threshold(img_conv, 100, 255, 0)
+    close = cv2.erode(gray, kernel, iterations = 2)
+    ret, thresh = cv2.threshold(close, 100, 255, 0)
     im2, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
     contour_sizes = [(cv2.contourArea(contour), contour) for contour in contours]
     contours_by_size = sorted(contour_sizes, key=lambda x: x[0])
     pattern_contour = contours_by_size[-2][1]
     cv2.drawContours(new_image, pattern_contour, -1, (0,0,0), 3)
     new_image = cv2.erode(new_image, kernel, iterations = 2)
-    cv2.imwrite('/Users/theodoreseem/Desktop/subpixel.png',new_image)
     return new_image
 
-def retrieveVertices(image):
+def retrieveVertices(img):
 
-    img = image
+
     height, width, channels = img.shape
-    #kernel = np.ones((10,10),np.uint8)
-    #erosion = cv2.erode(img,kernel,iterations = 1)
+    erosion = cv2.dilate(img,np.ones((8,8),np.uint8),iterations = 1)
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
     # find Harris corners
-    gray = np.float32(gray)
-    dst = cv2.cornerHarris(gray,3,11,.1)
+    dst = cv2.cornerHarris(np.float32(gray),3,11,.1)
     dst = cv2.dilate(dst,None)
-    ret, dst = cv2.threshold(dst,100,255,0)
+    ret, dst = cv2.threshold(dst,127,255,cv2.THRESH_BINARY)
     dst = np.uint8(dst)
+    cv2.imwrite('/Users/theodoreseem/Desktop/dst.png',dst)
 
     # find centroids
-    ret, labels, stats, centroids = cv2.connectedComponentsWithStats(dst)
+    ret, labels, stats, centroids = cv2.connectedComponentsWithStats(dst, connectivity=4)
 
     # define the criteria to stop and refine the corners
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, .01)
     corners = cv2.cornerSubPix(gray,np.float32(centroids),(10,10),(-1,-1),criteria)
     vertices = list(np.int0(corners))
-    for v in vertices:
-        if is_close(v[0], v[1], (width/2), (height/2), 20):
-            vertices.remove(v)
-    vertices = np.array(vertices)
-    #print(vertices)
-    for v in vertices:
-        cv2.circle(img,(v[0],v[1]), 5, (255,0,0), 5)
-    height, width, channels = img.shape
-    #for i in range(0,height):
-    #    for j in range(0,width):
-    #        if np.any(img[i,j] != 255):
-    #            img[i,j] = [255,0,0]
-    cv2.imwrite('/Users/theodoreseem/Desktop/subpixel5.png',img)
+    centerVertex = [v for v in vertices if is_close(v[0], v[1], (width/2), (height/2), 10)][0]
+    vertices.remove(centerVertex)
+
     return vertices
 
-def createFeatures(vertices):
+def createDAG(vertices):
 
     def get_dist(x1,y1,x2,y2):
         return int(math.sqrt((x2-x1)**2 + (y2-y1)**2))
@@ -202,13 +220,57 @@ def createFeatures(vertices):
     featureList.append(feat)
     for count, f in enumerate(featureList):
         f.orderNum = count
-    return featureList
+    return DAGList
 
-def createSubFeatures(featureList, vertices, image):
+def extract_initial_contours(vertices, img):
+
+    height, width, channels = img.shape
+    erosion = cv2.dilate(img,np.ones((8,8),np.uint8),iterations = 1)
+    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    img_conv = util.invert(gray)
+    img_conv = cv2.erode(img_conv, np.ones((3,3),np.uint8), iterations = 2)
+    ret, thresh = cv2.threshold(img_conv, 100, 255, 0)
+    im2, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    contourArray = np.vstack(contours[1]).squeeze()
+    contourPoints = list(map(tuple, contourArray))
+
+    def isCloseToVert(point):
+        for v in vertices:
+            if is_close(point[0], point[1], v[0], v[1], 5):
+                return True
+        return False
+
+    points_without_vertices = [p for p in contourPoints if not isCloseToVert(p)]
+
+    nonVertex_image = np.ones([height, width, 3],np.uint8)*255
+    for p in points_without_vertices:
+        cv2.circle(nonVertex_image, (p[0], p[1]), 1, (0,0,0), 1)
+
+    erosion = cv2.erode(nonVertex_image,np.ones((2,2),np.uint8),iterations = 1)
+    graynonVert = cv2.cvtColor(erosion,cv2.COLOR_BGR2GRAY)
+    threshnonVert = cv2.threshold(graynonVert, 127, 255, cv2.THRESH_BINARY)[1]
+    inverted = 255-threshnonVert
+
+    img_bin = np.array(inverted)
+
+    n_labels, img_labeled, lab_stats, _ = cv2.connectedComponentsWithStats(img_bin, connectivity=8, ltype=cv2.CV_32S)
+
+    mask = np.zeros(img_bin.shape, dtype=np.uint8) #For Testing
+    componentArray = [[] for _ in range(len(lab_stats)-1)]
+    print(componentArray)
+    for component in range(1,len(lab_stats)):
+        indices = np.where(img_labeled == component)
+        mask[indices] = 255 # For Testing
+        indices = tuple(zip(*indices))
+        indices = [t[::-1] for t in indices]
+        componentArray[component-1].append(indices)
+
+    return componentArray
+
+def create_features(contours, DAG):
 
     def collinear_exact(Points):
         Points.sort(key=lambda x: x[0])
-        #print(Points)
         x1, y1 = Points[0]
         x2, y2 = Points[len(Points)-1]
         collinearity = []
@@ -244,27 +306,231 @@ def createSubFeatures(featureList, vertices, image):
                 return f
         print("Internal Error: associated feature not found")
         exit(0)
+    def fits_poly(points, deg):
+        is_vertical = False
+        xs = [x for x,y in points]; ys = [y for x,y in points]
+        if abs(points[0][0]-points[int(len(points)/2)][0])<50 and abs(points[0][0]-points[-1][0])<50: #Assumption
+            is_vertical = True
+            tmp = xs, ys
+            ys = tmp[0]; xs = tmp[1]
+        xs = np.array(xs).reshape(len(xs), 1)
+        ys = np.array(ys).reshape(len(ys), 1)
+        min_rmse = 1
+
+        x_train, x_test, y_train, y_test = train_test_split(xs, ys, test_size=0.3)
+
+        # Train features
+        poly_features = PolynomialFeatures(degree=deg, include_bias=False)
+        x_poly_train = poly_features.fit_transform(x_train)
+
+        # Linear regression
+        poly_reg = LinearRegression()
+        poly_reg.fit(x_poly_train, y_train)
+
+        # Compare with test data
+        x_poly_test = poly_features.fit_transform(x_test)
+        poly_predict = poly_reg.predict(x_poly_test)
+        poly_mse = mean_squared_error(y_test, poly_predict)
+        poly_rmse = np.sqrt(poly_mse)
+
+        #print('Degree {} with RMSE {}'.format(deg, poly_rmse))
+        #fig = plt.figure()
+        #ax = fig.add_subplot(111)
+        #ax.plot(degrees, rmses)
+        #ax.set_yscale('log')
+        #ax.set_xlabel('Degree')
+        #ax.set_ylabel('RMSE')
+        #plt.show()
+
+        # Cross-validation of degree
+        if poly_rmse < min_rmse: #Need to check this assumption
+            return True
+        return False
+
+    for c in len(contours):
+        contour_points = contours(c)
+        feature = findAssociatedFeature(contour_points)
+        if collinear_exact(contour_points):
+            lineObj = Line(feature.x1, feature.y1, feature.x2, feature.y2, feature.orderNum)
+        elif fits_poly(contour_points, 3):
+            if abs(contour_points[0][0]-contour_points[int(len(points)/2)][0])<50 and abs(contour_points[0][0]-contour_points[-1][0])<50: #Assumption
+                tmp = xs, ys
+                ys = tmp[0]; xs = tmp[1]
+            xs = [x for x,y in points]; ys = [y for x,y in points]
+            polynomial = np.poly1d(np.polyfit(xs, ys, 3))
+            ys = [polynomial(x) for x in xs]
+            control_points = #Calculate Bezier curve (cps)
+            curveObj = Curve(cps[0][0], cps[0][1], cps[1][0], cps[1][1], feature.orderNum)
+        else:
+            #Map to fourth degree Polynomial
+            #Divide into two features at inflection point
+            #Take each feature and calculate bezier curve (cps)
+            #add each curve to features list
+
+
+
+        inflections = calcInflecVerts(indices, height)
+
+            def smoothContours(contours):
+                smoothened = []
+                for contour in contours:
+                    x,y = contour.T
+                    # Convert from numpy arrays to normal arrays
+                    x = x.tolist()[0]
+                    y = y.tolist()[0]
+                    # https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.interpolate.splprep.html
+                    tck, u = splprep([x,y], u=None, s=1.0, per=1)
+                    # https://docs.scipy.org/doc/numpy-1.10.1/reference/generated/numpy.linspace.html
+                    u_new = numpy.linspace(u.min(), u.max(), 25)
+                    # https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.interpolate.splev.html
+                    x_new, y_new = splev(u_new, tck, der=0)
+                    # Convert it back to numpy format for opencv to be able to display it
+                    res_array = [[[int(i[0]), int(i[1])]] for i in zip(x_new,y_new)]
+                    smoothened.append(numpy.asarray(res_array, dtype=numpy.int32))
+                return smoothened
+
+            def calcInflecVerts(points, height):
+                #yhat = savgol_filter(ys, len(ys), 3)
+
+
+                is_vertical = False
+                xs = [x for x,y in points]
+                ys = [height-y for x,y in points]
+                plt.plot(xs, ys, 'g-')
+
+
+                if abs(points[0][0]-points[int(len(points)/2)][0])<50 and abs(points[0][0]-points[-1][0])<50:
+                    is_vertical = True
+                    tmp = xs, ys
+                    ys = tmp[0]; xs = tmp[1]
+
+                xs = [(x1+x2)/2 for x1,x2 in zip(xs[0::2], xs[1::2])]
+                ys = [(y1+y2)/2 for y1,y2 in zip(ys[0::2], ys[1::2])]
+
+                plt.plot(xs, ys, 'b-')
+                plt.show()
+
+
+                xs = np.array(xs).reshape(len(xs), 1)
+                ys = np.array(ys).reshape(len(ys), 1)
+                x_train, x_test, y_train, y_test = train_test_split(xs, ys, test_size=0.3)
+
+                print(x_train)
+                rmses = []
+                degrees = np.arange(1, 6)
+                min_rmse, min_deg = 1e10, 0
+
+                for deg in degrees:
+
+                    # Train features
+                    poly_features = PolynomialFeatures(degree=deg, include_bias=False)
+                    x_poly_train = poly_features.fit_transform(x_train)
+
+                    # Linear regression
+                    poly_reg = LinearRegression()
+                    poly_reg.fit(x_poly_train, y_train)
+
+                    # Compare with test data
+                    x_poly_test = poly_features.fit_transform(x_test)
+                    poly_predict = poly_reg.predict(x_poly_test)
+                    poly_mse = mean_squared_error(y_test, poly_predict)
+                    poly_rmse = np.sqrt(poly_mse)
+                    rmses.append(poly_rmse)
+
+                    # Cross-validation of degree
+                    if min_rmse > poly_rmse:
+                        min_rmse = poly_rmse
+                        min_deg = deg
+
+                #check_output():
+                    # Plot and present results
+                    #print('Best degree {} with RMSE {}'.format(min_deg, min_rmse))
+
+                    #fig = plt.figure()
+                    #ax = fig.add_subplot(111)
+                    #ax.plot(degrees, rmses)
+                    #ax.set_yscale('log')
+                    #ax.set_xlabel('Degree')
+                    #ax.set_ylabel('RMSE')
+                    #plt.show()
+
+
+
+
+
+
+
+                    #polynomial = np.poly1d(np.polyfit(xs, ys, 3))
+                    #ys = [polynomial(x) for x in xs]
+                    #tmp2 = xs, ys
+                    #ys = tmp2[0]; xs = tmp2[1]
+
+                polynomial = np.poly1d(np.polyfit(xs, ys, min_deg))
+                ys = [polynomial(x) for x in xs]
+
+                second_deriv = np.polyder(polynomial, 2)
+
+                def solve_for_y(poly_coeffs, y):
+                    pc = poly_coeffs.copy()
+                    pc[-1] -= y
+                    return np.roots(pc)
+
+                x_verts = solve_for_y(second_deriv, 0)
+                y_verts = [polynomial(x) for x in x_verts]
+
+                return tuple(zip(x_verts,y_verts))
+
+
+        cv2.imwrite('/Users/theodoreseem/Desktop/largest.png',mask)
+
+
+
+def createSubFeatures(featureList, vertices, image):
+
+
     def findControlPoints(points):
 
+        def polyfit_with_fixed_points(n, x, y, xf, yf) :
+            mat = np.empty((n + 1 + len(xf),) * 2)
+            vec = np.empty((n + 1 + len(xf),))
+            x_n = x**np.arange(2 * n + 1)[:, None]
+            yx_n = np.sum(x_n[:n + 1] * y, axis=1)
+            x_n = np.sum(x_n, axis=1)
+            idx = np.arange(n + 1) + np.arange(n + 1)[:, None]
+            mat[:n + 1, :n + 1] = np.take(x_n, idx)
+            xf_n = xf**np.arange(n + 1)[:, None]
+            mat[:n + 1, n + 1:] = xf_n / 2
+            mat[n + 1:, :n + 1] = xf_n.T
+            mat[n + 1:, n + 1:] = 0
+            vec[:n + 1] = yx_n
+            vec[n + 1:] = yf
+            params = np.linalg.solve(mat, vec)
+            return params[:n + 1][::-1]
 
         #clusters contours into center line
-        #points = [(int((p1[0]+p2[0]+p3[0]+p4[0])/4),int((p1[1]+p2[1]+p3[1]+p4[1])/4)) for p1,p2,p3,p4 in zip(points[0::4], points[1::4], points[2::4], points[3::4])]
+        points = [(int((p1[0]+p2[0]+p3[0]+p4[0])/4),int((p1[1]+p2[1]+p3[1]+p4[1])/4)) for p1,p2,p3,p4 in zip(points[0::4], points[1::4], points[2::4], points[3::4])]
 
         xs = [x for x,y in points]
         ys = [y for x,y in points]
 
-        xSample1 = points[0][0]; xSample2 = points[int(len(points)/2)][0] ; xSample3 = points[len(points)-1][0]
-        if abs(xSample1-xSample2)<50 and abs(xSample1-xSample3)<50:
-            print("vertical line")
-            tmp = xs, ys
-            ys = tmp[0]; xs = tmp[1]
-            polynomial = np.poly1d(np.polyfit(xs, ys, 3))
-            ys = [polynomial(x) for x in xs]
-            tmp = xs, ys
-            ys = tmp[0]; xs = tmp[1]
-        else:
-            polynomial = np.poly1d(np.polyfit(xs, ys, 3))
-            ys = [polynomial(x) for x in xs]
+        #xSample1 = points[0][0]; xSample2 = points[int(len(points)/2)][0] ; xSample3 = points[len(points)-1][0]
+        #if abs(xSample1-xSample2)<50 and abs(xSample1-xSample3)<50:
+        #    print("vertical line")
+        #    tmp = xs, ys
+        #    ys = tmp[0]; xs = tmp[1]
+        #    #polynomial = np.poly1d(np.polyfit(xs, ys, 3))
+        #    polynomial = np.poly1d(polyfit_with_fixed_points(4, xs , ys, [xs[0],xs[int(len(xs)/2)], xs[len(xs)-1]], [ys[0],ys[int(len(ys)/2)], ys[len(ys)-1]]))
+        #    ys = [polynomial(x) for x in xs]
+        #    tmp = xs, ys
+        #    ys = tmp[0]; xs = tmp[1]
+        #else:
+        #    #polynomial = np.poly1d(np.polyfit(xs, ys, 3))
+        #    polynomial = np.poly1d(polyfit_with_fixed_points(4, xs , ys, [xs[0],xs[int(len(xs)/2)], xs[len(xs)-1]], [ys[0],ys[int(len(ys)/2)], ys[len(ys)-1]]))
+        #    ys = [polynomial(x) for x in xs]
+
+        #polynomial = np.poly1d(polyfit_with_fixed_points(3, xs , ys, [xs[0],xs[int(len(xs)/2)], xs[len(xs)-1]], [ys[0],ys[int(len(ys)/2)], ys[len(ys)-1]]))
+
+
 
         polys = [(int(x),int(y)) for x,y in zip(xs,ys)]  #NEED TO GET THIS POLYNOMIAL LINE TO FIT BETTER
 
@@ -336,6 +602,39 @@ def createSubFeatures(featureList, vertices, image):
         best_fit_control_pts = [(int(x),int(y)) for x,y in zip(x_solutions, y_solutions)]
 
         return best_fit_control_pts, polys
+    def CalcBezierControlPoints(points):
+
+        points = [(int((p1[0]+p2[0]+p3[0]+p4[0])/4),int((p1[1]+p2[1]+p3[1]+p4[1])/4)) for p1,p2,p3,p4 in zip(points[0::4], points[1::4], points[2::4], points[3::4])]
+
+        firstPoint = points[0]
+        lastPoint = points[-1]
+
+        xs = [x for x,y in points]
+        ys = [y for x,y in points]
+        cubicPoly = np.poly1d(np.polyfit(xs, ys, 3))
+
+        xDiff = lastPoint[0] - firstPoint[0]
+        x1 = firstPoint[0] + xDiff / 3.0
+        x2 = firstPoint[0] + 2.0 * xDiff / 3.0
+
+        y1 = cubicPoly(x1)
+        y2 = cubicPoly(x2)
+
+        f1 = 0.296296296296296296296; # (1-1/3)^3
+        f2 = 0.037037037037037037037; # (1-2/3)^3
+        f3 = 0.296296296296296296296; # (2/3)^3
+
+        b1 = y1 - firstPoint[1] * f1 - lastPoint[1] / 27.0;
+        b2 = y2 - firstPoint[1] * f2 - f3 * lastPoint[1];
+
+        c1 = (-2 * b1 + b2) / -0.666666666666666666;
+        c2 = (b2 - 0.2222222222222 * c1) / 0.44444444444444444;
+
+        secondPoint = (int(x1),int(c1))
+        thirdPoint = (int(x2), int(c2))
+
+        return firstPoint, secondPoint, thirdPoint, lastPoint
+
 
     feaList = []; imageList = []
     img = image
@@ -358,29 +657,27 @@ def createSubFeatures(featureList, vertices, image):
            lineObj = Line(feature.x1, feature.y1, feature.x2, feature.y2, feature.orderNum)
            feaList.append(lineObj)
            #print("Line: (ang, dis)", lineObj.degrees, lineObj.distance)
-           lineMeasure = lExt_mapping[str(lineObj.distance)],int(abs(lineObj.degrees))
-           lineImage = lineImg_mapping[str(lineMeasure)]
+           lineMeasure = line_ext_map[str(lineObj.distance)],int(abs(lineObj.degrees))
+           lineImage = line_Image_map[str(lineMeasure)]
            #print("line mapped to: ", lineImage)
            imageList.append(lineImage)
         else:
-
-            #PASSING THE CONTROL POINTS AND THE POINTS OF THE POLYNOMIAL FIT
             #The curve end points aren't correct and then need to re-align them into proper DAG order
             #Then check that the Seamly2d VERSION RENDERS SOMEWHAT CLOSE TO THE REAL IMAGE
 
-            cps, polys = findControlPoints(c_tup)
+            #cps, polys = findControlPoints(c_tup)
+            cps = CalcBezierControlPoints(c_tup)
             feature = findAssociatedFeature(c_tup)
             cv2.line(image, cps[0], cps[1] , (0,255,0), 5)
             cv2.line(image, cps[2], cps[3], (0,255,0), 5)
-            for p in polys: cv2.circle(image,p, 1, (0,255,0), -1)
+            #for p in polys: cv2.circle(image,p, 1, (0,255,0), -1)
             for p in c_tup: cv2.circle(image,p, 1, (0,0,255), -1)
             curveObj = Curve(cps[0][0], cps[0][1], cps[1][0], cps[1][1], cps[2][0],cps[2][1], cps[3][0], cps[3][1], feature.orderNum)
             #print("Curve: (a1,d1,a2,d2)", curveObj.degrees1, curveObj.distance1, curveObj.degrees2, curveObj.distance2)
             #print("Curve: (x1,y1,x2,y2)", curveObj.x1, curveObj.y1, curveObj.x2, curveObj.y2)
             feaList.append(curveObj)
-            curveMeasure1 = cExt_mapping[str(curveObj.degrees1)+", "+str(curveObj.distance1)]
-            curveMeasure2 = cExt_mapping[str(curveObj.degrees2)+", "+str(curveObj.distance2)]
-            curveImage = curveImg_mapping[str(curveMeasure1)+", "+str(curveMeasure2)]
+            curveMeasure = curve_ext_map[str(curveObj.degrees1)+", "+str(curveObj.distance1)]
+            curveImage = curve_image_map[str(curveMeasure)]
             #print("curve mapped to: ", curveImage)
             imageList.append(curveImage)
 
@@ -456,25 +753,21 @@ if __name__ == "__main__":
         input_Image = argv[0]
         output_file = argv[1]
     else:
-        print("Error: not enough argument supplied:")
-        print("compiler.py <path> <file name>")
+        print("Error: not enough argument supplied: \n compiler.py <path> <file name>")
         exit(0)
 
-    print(input_Image)
-    with open(lineImage_mapping) as data_file:
-        lineImg_mapping = json.load(data_file); lineImg_mapping = defaultdict(lambda: "NO IMG", lineImg_mapping)
-    with open(curveImage_mapping) as data_file:
-        curveImg_mapping = json.load(data_file); curveImg_mapping = defaultdict(lambda: "NO IMG", curveImg_mapping)
-    with open(lineExt_mapping) as ext_file:
-        lExt_mapping = json.load(ext_file); lExt_mapping = defaultdict(lambda: "NO MEASURE", lExt_mapping)
-    with open(curveExt_mapping) as ext_file:
-        cExt_mapping = json.load(ext_file); cExt_mapping = defaultdict(lambda: "NO MEASURE", cExt_mapping)
+    line_Image_map, curve_image_map, line_ext_map, curve_ext_map = loadDictionaries()
 
-    image_cleaned = clean_Image(input_Image)
-    image_vertices = retrieveVertices(image_cleaned)
-    fList = createFeatures(image_vertices)
-    subFeatureList, imageList, height = createSubFeatures(fList, image_vertices, image_cleaned)
-    for f in subFeatureList:
-        print("Curve: (x1,y1,x2,y2)", f.x1, f.y1, f.x2, f.y2)
+    imageCleaned = clean_Image(input_Image)
+    image_vertices = retrieveVertices(imageCleaned)
+    DAG = createDAG(image_vertices)
+    contours = extract_initial_contours(image_vertices, imageCleaned)
+    initial_features = create_features(contours, DAG)
+
+
+    #subFeatureList, imageList, height = createSubFeatures(featuresList, image_vertices, imageCleaned)
+    #if DEBUG_FLAG:
+    #    for f in subFeatureList:
+    #        print("feature: (x1,y1,x2,y2)", f.endpoints)
     #compiledXML = compileXML(subFeatureList, output_file, height)
     #buildImageRepresentation(imageList) #CANT DO THIS UNTIL THE DICTIONARY IS BUILT OUT

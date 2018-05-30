@@ -1,23 +1,32 @@
 import re
 import os
+import json
 
 
 ###############################
 
-Mapping_file = "/Users/theodoreseem/Desktop/Emoji2Code/dictionaries/Line-Image_mapping.json"
-Measurement_file = "/Users/theodoreseem/Desktop/Emoji2Code/Tucker-Brianna.vit"
-images_Directory = "/Users/theodoreseem/Desktop/Emoji2Code/Hasy-images/"
+Mapping_file = "/Users/theodoreseem/res.Network/dictionaries/Line-Image_mapping.json"
+Body_file = "/Users/theodoreseem/res.Network/Tucker-Brianna.vit"
+GenMeasure_file = "/Users/theodoreseem/res.Network/dictionaries/lineExtraction_mapping.json"
+images_Directory = "/Users/theodoreseem/res.Network/Hasy-images/"
 degrees = 360
 
 ###############################
 
-def storeMeasurement(measurList = []):
-    inputFile = open(Measurement_file, "r")
+def storeBodyMeasurement(measurList = []):
+    inputFile = open(Body_file, "r")
     for count, line in enumerate(inputFile):
         if "<m" in line:
             msure = [re.findall('"([^"]*)"', word) for word in line.split() if "name" in word]
             measurList.append(msure[0].pop(0))
     return measurList
+
+def storeGenericMeasurement(measurList = []):
+    with open(GenMeasure_file) as data_file:
+        measurements = json.load(data_file)
+    measurements = [measurements[k] for k in measurements]
+    return measurements
+
 
 def storeDegrees(degList = []):
     for deg in range(0,degrees):
@@ -41,8 +50,8 @@ def createMappingDictionary(measurements, degrees, images):
 
 if __name__ == "__main__":
 
-    measurements =  storeMeasurement()
+    measurements =  storeGenericMeasurement()
     degrees = storeDegrees()
     images = os.listdir(images_Directory)
 
-    createMappingDictionary(measurements[0:11], degrees, images)
+    createMappingDictionary(measurements, degrees, images)
