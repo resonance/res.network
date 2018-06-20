@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pattern>
+<!--Pattern created with Seamly2D v0.6.0.0a (https://fashionfreedom.eu/).-->
+<version>0.6.0</version>
+<unit>inch</unit>
+<description/>
+<notes/>
+<measurements>/Users/theodoreseem/ResonanceHub/image2XML/image2XML/Data/Vector_Measurements/Tucker-Brianna.vit</measurements>
+<increments/>
+<draw name="Test1">
+<calculation>
+<point id="1" mx=".1" my=".1" name="A" type="single" x="90" y="90"/>
+<point angle="90" basePoint="1" id="2" length="height*2" lineColor="black" mx=".1" my=".1" name="A1" type="endLine" typeLine="hair"/>
+<point angle="180" basePoint="1" id="3" length="height*2" lineColor="black" mx=".1" my=".1" name="A2" type="endLine" typeLine="hair"/>
+<point id="4" mx=".1" my=".1" name="B" type="single" x="20" y="20"/>
+<point angle="348" basePoint="4" id="5" length="1.3" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="89" basePoint="5" id="6" length="0.5" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="89" basePoint="6" id="7" length="34.5" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="89" basePoint="7" id="8" length="0.5" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="89" basePoint="8" id="9" length="1.0" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="224" basePoint="9" id="10" length="1.8" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="77" basePoint="10" id="11" length="1.3" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="180" basePoint="11" id="12" length="0.5" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="180" basePoint="12" id="13" length="7.8" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="270" basePoint="13" id="14" length="1.0" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="115" basePoint="14" id="15" length="1.1" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="270" basePoint="15" id="16" length="1.0" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="173" basePoint="16" id="17" length="7.8" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="180" basePoint="17" id="18" length="0.5" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="282" basePoint="18" id="19" length="1.3" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="135" basePoint="19" id="20" length="1.7" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="270" basePoint="20" id="21" length="1.0" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="270" basePoint="21" id="22" length="0.5" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="270" basePoint="22" id="23" length="34.5" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="270" basePoint="23" id="24" length="0.5" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="12" basePoint="24" id="25" length="1.3" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="358" basePoint="25" id="26" length="8.0" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="0" basePoint="26" id="27" length="0.5" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<line firstPoint="27" id="28" lineColor="black" secondPoint="4" typeLine="hair"/>
+</calculation>
+<modeling/>
+<details/>
+</draw>
+</pattern>

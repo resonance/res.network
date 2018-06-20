@@ -1,0 +1,9 @@
+#!/bin/bash
+
+rm Demo_Training/datasets/all_data/*
+
+cp ril_outputs/* Demo_Training/datasets/all_data/
+cp rsl_outputs/* Demo_Training/datasets/all_data/
+
+cd Demo_Training/model
+

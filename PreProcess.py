@@ -350,6 +350,54 @@ def create_features(contours, DAG):
         if poly_rmse < min_rmse: #Need to check this assumption
             return True
         return False
+    def is_valid_curve(points):
+        '''Check to see if the curve is a valid polynomial in current or flipped over x/y axis form'''
+        xs = [x for x,y in points]
+        ys = [y for x,y in points]
+        if len(xs) != len(set(xs)):
+            if len(ys) != len(set(ys)):
+                return False
+        return True
+    def filter_x_values(points):
+        set_points = []
+        for p in points:
+            add = True
+            for sp in set_points:
+                if p[0] == sp[0]:
+                    add = False
+            if add == True:
+                set_points.append(p)
+        return set_points
+    def average_points(ps):
+        n = 15
+        xs = [x for x,y in ps]; ys = [y for x,y in ps]
+        x_averages = [sum(xs[i:i+n])//n for i in range(0,len(xs),n)]
+        y_averages = [sum(ys[i:i+n])//n for i in range(0,len(ys),n)]
+
+        plt.plot(xs, ys, 'bo')
+        plt.plot(x_averages, y_averages, 'ro')
+        plt.show()
+
+
+
+
+
+
+#    def get_curve_type(points):
+#        xs = [x for x,y in points]
+#        if len(xs) != len(set(xs)):
+#
+#
+#        points = filter_x_values(contour_points)
+#        xs = [x for x,y in points]; ys = [y for x,y in points]
+#        if checkValid(points):
+#            derivative_list = np.diff(ys)/np.diff(xs)
+#            if derivative_list.count(0) == 1:
+#                return True
+#            else:
+#                return False
+#        else:
+#            return False
     def smoothContours(contours):
         smoothened = []
         for contour in contours:
@@ -513,10 +561,16 @@ def create_features(contours, DAG):
         contour_points = contours[c][0]
         print(contour_points[0:10])
         feature = findAssociatedFeature(contour_points, DAG)
+        condensed_points = average_points(contour_points)
+        print(condensed_points[0:10])
         if collinear_exact(contour_points):
             lineObj = Line(feature.x1, feature.y1, feature.x2, feature.y2, feature.orderNum)
             final_featuresList.append(lineObj)
-        elif fits_poly(contour_points, 2):
+        '''elif not is_valid_curve(contour_points):
+            #divide curve into two
+        elif is_valid_curve(contour_points):
+            curve_type = get_curve_type(contour_points)
+
             xs = [x for x,y in contour_points]; ys = [y for x,y in contour_points]
             if abs(contour_points[0][0]-contour_points[int(len(contour_points)/2)][0])<50 and abs(contour_points[0][0]-contour_points[-1][0])<50: #Assumption
                 tmp = xs, ys
@@ -528,7 +582,7 @@ def create_features(contours, DAG):
             final_featuresList.append(curveObj)
         else:
             print("Third degree polynomial curve")
-    '''        xs = [x for x,y in contour_points]; ys = [y for x,y in contour_points]
+            xs = [x for x,y in contour_points]; ys = [y for x,y in contour_points]
             if abs(contour_points[0][0]-contour_points[int(len(contour_points)/2)][0])<50 and abs(contour_points[0][0]-contour_points[-1][0])<50: #Assumption
                 tmp = xs, ys
                 ys = tmp[0]; xs = tmp[1]
@@ -772,17 +826,6 @@ if __name__ == "__main__":
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-    #set_points = []
-    #for p in contours[2][0]:
-    #    add = True
-    #    for sp in set_points:
-    #        if p[0] == sp[0]:
-    #            add = False
-    #    if add == True:
-    #        set_points.append(p)
-    #print(set_points)
-    #xs = [x for x,y in set_points]; ys = [700-y for x,y in set_points]
-    #contours[2][0] = set_points
     #plt.plot(xs, ys, 'bo')
     #plt.show()
     features = create_features(contours, DAG)

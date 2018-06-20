@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pattern>
+<!--Pattern created with Seamly2D v0.6.0.0a (https://fashionfreedom.eu/).-->
+<version>0.6.0</version>
+<unit>inch</unit>
+<description/>
+<notes/>
+<measurements>/Users/theodoreseem/ResonanceHub/image2XML/image2XML/Data/Vector_Measurements/Tucker-Brianna.vit</measurements>
+<increments/>
+<draw name="Test1">
+<calculation>
+<point id="1" mx=".1" my=".1" name="A" type="single" x="90" y="90"/>
+<point angle="90" basePoint="1" id="2" length="height*2" lineColor="black" mx=".1" my=".1" name="A1" type="endLine" typeLine="hair"/>
+<point angle="180" basePoint="1" id="3" length="height*2" lineColor="black" mx=".1" my=".1" name="A2" type="endLine" typeLine="hair"/>
+<point id="4" mx=".1" my=".1" name="B" type="single" x="20" y="20"/>
+<point angle="41" basePoint="4" id="5" length="16.2" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="89" basePoint="5" id="6" length="7.9" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="138" basePoint="6" id="7" length="16.1" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="176" basePoint="7" id="8" length="23.7" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<point angle="270" basePoint="8" id="9" length="32.7" lineColor="black" mx=".1" my=".1" name="B1" type="endLine" typeLine="hair"/>
+<line firstPoint="9" id="10" lineColor="black" secondPoint="4" typeLine="hair"/>
+</calculation>
+<modeling/>
+<details/>
+</draw>
+</pattern>
