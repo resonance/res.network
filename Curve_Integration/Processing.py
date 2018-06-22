@@ -16,25 +16,18 @@ import random
 np.set_printoptions(threshold=np.nan)
 
 ## TODO: Fix the placement of Corners (use overlap of dst and curve and then find centroid), need notches
-## TODO: Add basic curve Curve integration
+## TODO: Fix the DAG (seems to be currently out of place)
+## TODO: Fix the bezier curve calculation (Second point seems to be endpoint)
 
 degree_round = 10
 distance_round = 25
-xml_shrink = 50
+conversionShrinkage = 50
 
 master_Directory = '/Users/theodoreseem/res.Network/Curve_Integration/'
 
 lineImage_mapping = '/Users/theodoreseem/res.Network/Curve_Integration/dictionaries/Line-Image.json'
 featureExt_mapping = '/Users/theodoreseem/res.Network/Curve_Integration/dictionaries/Feature-Extraction.json'
 curveImage_mapping = '/Users/theodoreseem/res.Network/Curve_Integration/dictionaries/Curve-Image.json'
-
-repeatLines = ["<?xml version=\"1.0\" encoding=\"UTF-8\"?>", "<pattern>", "<!--Pattern created with Seamly2D v0.6.0.0a (https://fashionfreedom.eu/).-->", "<version>0.6.0</version>",
-                "<unit>inch</unit>", "<description/>","<notes/>","<measurements>/Users/theodoreseem/ResonanceHub/image2XML/image2XML/Data/Vector_Measurements/Tucker-Brianna.vit</measurements>",
-                "<increments/>", "<draw name=\"Test1\">", "<calculation>", "<point id=\"1\" mx=\".1\" my=\".1\" name=\"A\" type=\"single\" x=\"90\" y=\"90\"/>",
-                "<point angle=\"90\" basePoint=\"1\" id=\"2\" length=\"height*2\" lineColor=\"black\" mx=\".1\" my=\".1\" name=\"A1\" type=\"endLine\" typeLine=\"hair\"/>",
-                "<point angle=\"180\" basePoint=\"1\" id=\"3\" length=\"height*2\" lineColor=\"black\" mx=\".1\" my=\".1\" name=\"A2\" type=\"endLine\" typeLine=\"hair\"/>",
-                "<point id=\"4\" mx=\".1\" my=\".1\" name=\"B\" type=\"single\" x=\"20\" y=\"20\"/>"]
-repeatLines2 = ["</calculation>","<modeling/>","<details/>","</draw>","</pattern>"]
 
 class Feature:
 
@@ -52,6 +45,7 @@ class Line(Feature):
     orderNum = ...;
 
     def __init__(self, x1, y1, x2, y2, order):
+        self.x1 = x1; self.y1 = y1; self.x2 = x2; self.y2 = y2
 
         def calc_degrees(angle):
             if angle > 0:
@@ -72,6 +66,7 @@ class Curve(Feature):
     orderNum = ...;
 
     def __init__(self, x1, y1, x2, y2, x3, y3, order):
+        self.x1 = x1; self.y1 = y1; self.x2 = x2; self.y2 = y2; self.x3 = x3; self.y3 = y3
 
         def my_round(x, roundNum):
             return round(x/roundNum)*roundNum
@@ -84,12 +79,16 @@ class Curve(Feature):
         Feature.__init__(self,x1,y1,x3,y3)
 
         #second angle calc due to control points order
-        self.angle1 = round(math.atan2(y2-y1, x2-x1),2)*-1; self.distance1 = my_round(int(math.sqrt((x2-x1)**2 + (y2-y1)**2)),5);
-        self.angle2 = round(math.atan2(y2-y3, x2-x3),2)*-1; self.distance2 = my_round(int(math.sqrt((x2-x3)**2 + (y2-y3)**2)),5);
-        self.degrees1 = calc_degrees(self.angle1);
-        self.degrees2 = calc_degrees(self.angle2)
+        self.angle = round(math.atan2(y2-y1, x2-x1),2)*-1
+        self.distance = my_round(int(math.sqrt((x2-x1)**2 + (y2-y1)**2)),5)
+        self.degrees = calc_degrees(self.angle);
         self.orderNum = order;
         self.endpoints = (x1,y1),(x3,y3)
+
+        #Depricated from a time when calculating cubic curves and nto quadratic curves
+            #self.distance1 = my_round(int(math.sqrt((x2-x1)**2 + (y2-y1)**2)),5); self.distance2 = my_round(int(math.sqrt((x2-x3)**2 + (y2-y3)**2)),5);
+            #self.angle1 = round(math.atan2(y2-y1, x2-x1),2)*-1; self.angle2 = round(math.atan2(y2-y3, x2-x3),2)*-1
+            #self.degrees1 = calc_degrees(self.angle1); self.degrees2 = calc_degrees(self.angle2)
 
 class Point:
 
@@ -284,12 +283,10 @@ def extract_initial_contours(DAG, img):
     n_labels, img_labeled, lab_stats, _ = cv2.connectedComponentsWithStats(img_binary, connectivity=4, ltype=cv2.CV_32S)
 
 
-    #TODO: Change this to appending points to the correct DAG feature instead of creating two dimensional array
-
     '''This is the fucntion to take the clustered output from previous line and organize into arrays of clustered points'''
     '''Storing in two dimensional array where the first position of each second dimension holds all the points coordinates'''
     '''Said differently componentArray[0][0] holds coordinates of first feature, componentArray[1][0] the second feature, componentArray[2][0] the third...'''
-    filledFeatures = np.empty_like(DAG)
+    filledFeatures = []
 
     for component in range(1,len(lab_stats)):
         indices = np.where(img_labeled == component)
@@ -304,14 +301,15 @@ def extract_initial_contours(DAG, img):
     #return componentArray
     return filledFeatures
 
-def subdivisionFeatures(features):
+def divideFeatures(features):
 
     def iswWithin(bx1, bx2, by1, by2, p):
         if bx1<p[0]<bx2 and by1<p[1]<by2:
             return True
         return False
-    def filter_points(points, step_size = 50):
+    def filter_points(points, step_size = 75):
 
+        '''potential TODO Could get facier here and remove all points within x of any other point. This would help with vertical line deteciton later on'''
         filtered_points = []
         smallestX = min(points, key=lambda x:x[0])[0]; largestX = max(points, key=lambda x:x[0])[0]
         smallestY = min(points, key=lambda x:x[1])[1]; largestY = max(points, key=lambda x:x[1])[1]
@@ -330,6 +328,7 @@ def subdivisionFeatures(features):
                 else:
                     avg_x, avg_y = 0,0
                 if avg_x != 0 and avg_y !=0: filtered_points.append((avg_x, avg_y))
+
         return filtered_points
     def closestTo(anchor, points):
         closestDist = int(math.sqrt((points[0][0]-anchor[0])**2 + (points[0][1]-anchor[1])**2))
@@ -341,54 +340,309 @@ def subdivisionFeatures(features):
                 closestPoint = p
         return closestPoint
 
-    subArray = np.empty_like(features)
-
     ''' Iterate through each feature and find the filtered points of it's contour points. This is done by evaluating 50x50 area dimensions of that feature area
         and averaging all points which fall into that 50x50 grid location
         If a feature's length is less than some (200) pixels in length, the sub pixels are populated as the endpoints (because no need to divide feature further)
     '''
 
-    for f in range(len(features)):
+    for f in features:
         if f.distance > 200:
-            f.filteredPoints  = filter_points(f.points, 50)
+            f.filteredPoints  = filter_points(f.points)
             AveragePoint = filter_points(f.points, 100000)
             closest_toAvg = (AveragePoint, f.filteredPoints)
-            #Either divide up the contour points or go through the same process and create vertex, remove points, find contours, and do componentclustering
-
-
-
+            #Take the average point and divid the filtered points into groups based off of quadrants
+            #for all the points in each quadrant
         else:
             f.filteredPoints = f.endpoints
 
+    return features
+
+def createSubFeatures(features):
+
+    subFeatures = []
+    is_vertical = False
+    def cubicControlPoints(points):
+
+        def polyfit_with_fixed_points(n, x, y, xf, yf) :
+            mat = np.empty((n + 1 + len(xf),) * 2)
+            vec = np.empty((n + 1 + len(xf),))
+            x_n = x**np.arange(2 * n + 1)[:, None]
+            yx_n = np.sum(x_n[:n + 1] * y, axis=1)
+            x_n = np.sum(x_n, axis=1)
+            idx = np.arange(n + 1) + np.arange(n + 1)[:, None]
+            mat[:n + 1, :n + 1] = np.take(x_n, idx)
+            xf_n = xf**np.arange(n + 1)[:, None]
+            mat[:n + 1, n + 1:] = xf_n / 2
+            mat[n + 1:, :n + 1] = xf_n.T
+            mat[n + 1:, n + 1:] = 0
+            vec[:n + 1] = yx_n
+            vec[n + 1:] = yf
+            params = np.linalg.solve(mat, vec)
+            return params[:n + 1][::-1]
+
+        #clusters contours into center line
+        points = [(int((p1[0]+p2[0]+p3[0]+p4[0])/4),int((p1[1]+p2[1]+p3[1]+p4[1])/4)) for p1,p2,p3,p4 in zip(points[0::4], points[1::4], points[2::4], points[3::4])]
+
+        xs = [x for x,y in points]
+        ys = [y for x,y in points]
+
+        #xSample1 = points[0][0]; xSample2 = points[int(len(points)/2)][0] ; xSample3 = points[len(points)-1][0]
+        #if abs(xSample1-xSample2)<50 and abs(xSample1-xSample3)<50:
+        #    print("vertical line")
+        #    tmp = xs, ys
+        #    ys = tmp[0]; xs = tmp[1]
+        #    #polynomial = np.poly1d(np.polyfit(xs, ys, 3))
+        #    polynomial = np.poly1d(polyfit_with_fixed_points(4, xs , ys, [xs[0],xs[int(len(xs)/2)], xs[len(xs)-1]], [ys[0],ys[int(len(ys)/2)], ys[len(ys)-1]]))
+        #    ys = [polynomial(x) for x in xs]
+        #    tmp = xs, ys
+        #    ys = tmp[0]; xs = tmp[1]
+        #else:
+        #    #polynomial = np.poly1d(np.polyfit(xs, ys, 3))
+        #    polynomial = np.poly1d(polyfit_with_fixed_points(4, xs , ys, [xs[0],xs[int(len(xs)/2)], xs[len(xs)-1]], [ys[0],ys[int(len(ys)/2)], ys[len(ys)-1]]))
+        #    ys = [polynomial(x) for x in xs]
+
+        #polynomial = np.poly1d(polyfit_with_fixed_points(3, xs , ys, [xs[0],xs[int(len(xs)/2)], xs[len(xs)-1]], [ys[0],ys[int(len(ys)/2)], ys[len(ys)-1]]))
 
 
-    #Take the closest_toAvg point and use it to divide the array in half creating two new features replacing the old one in the DAG
 
-    #return filteredArray, subArray
+        #polys = [(int(x),int(y)) for x,y in zip(xs,ys)]  #NEED TO GET THIS POLYNOMIAL LINE TO FIT BETTER
 
-def calc_quadratic_bezier(polynomial, x1, x2):
+        ts = np.arange(0.0, 1.0, 1.0/len(points))
+        # make the summation functions for A (16 of them)
+        A_fns = [None for i in range(16)]
+        A_fns[0] = lambda time_list, data_list : sum([2*(t_i - 1)**6 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[1] = lambda time_list, data_list : sum([-6*t_i*(t_i - 1)**5 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[2] = lambda time_list, data_list : sum([6*t_i**2*(t_i - 1)**4 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[3] = lambda time_list, data_list : sum([-2*t_i**3*(t_i - 1)**3 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[4] = lambda time_list, data_list : sum([-6*t_i*(t_i - 1)**5 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[5] = lambda time_list, data_list : sum([18*t_i**2*(t_i - 1)**4 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[6] = lambda time_list, data_list : sum([-18*t_i**3*(t_i - 1)**3 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[7] = lambda time_list, data_list : sum([6*t_i**4*(t_i - 1)**2 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[8] = lambda time_list, data_list : sum([6*t_i**2*(t_i - 1)**4 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[9] = lambda time_list, data_list : sum([-18*t_i**3*(t_i - 1)**3 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[10] = lambda time_list, data_list : sum([18*t_i**4*(t_i - 1)**2 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[11] = lambda time_list, data_list : sum([-6*t_i**5*(t_i - 1) for t_i, d_i in zip(time_list, data_list)])
+        A_fns[12] = lambda time_list, data_list : sum([-2*t_i**3*(t_i - 1)**3 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[13] = lambda time_list, data_list : sum([6*t_i**4*(t_i - 1)**2 for t_i, d_i in zip(time_list, data_list)])
+        A_fns[14] = lambda time_list, data_list : sum([-6*t_i**5*(t_i - 1) for t_i, d_i in zip(time_list, data_list)])
+        A_fns[15] = lambda time_list, data_list : sum([2*t_i**6 for t_i, d_i in zip(time_list, data_list)])
 
-    derivative = np.polyder(polynomial, 1)
+        # make the summation functions for b (4 of them)
+        b_fns = [None for i in range(4)]
+        b_fns[0] = lambda time_list, data_list : -1.0 * sum([2*d_i*(t_i - 1)**3 for t_i, d_i in zip(time_list, data_list)])
+        b_fns[1] = lambda time_list, data_list : -1.0 * sum([-6*d_i*t_i*(t_i - 1)**2 for t_i, d_i in zip(time_list, data_list)])
+        b_fns[2] = lambda time_list, data_list : -1.0 * sum([6*d_i*t_i**2*(t_i - 1) for t_i, d_i in zip(time_list, data_list)])
+        b_fns[3] = lambda time_list, data_list : -1.0 * sum([-2*d_i*t_i**3 for t_i, d_i in zip(time_list, data_list)])
 
-    y1 = polynomial(x1);
-    y1_prime = derivative(x1)
-    y2 = polynomial(x2);
-    y2_prime = derivative(x2);
+        def solve_for_cs(time_series, data_series):
+            """
+            Take an input series of t_i values and the corresponding d_i values,
+            compute the summation values that should go into the matrices and
+            solve for the 4 unknown variables.
 
-    # Find intersection of tangents
-        # line0: y - y0 = y0p * (x - x0)
-        # line1: y - y1 = y1p * (x - x1)
-        # line0: y = y0p * x - y0p * x0 + y0
-        # line1: y = y1p * x - y1p * x1 + y1
-        # y0p * x - y0p * x0 + y0 = y1p * x - y1p * x1 + y1
-        # y0p * x - y1p * x = y0p * x0 - y0 - y1p * x1 + y1
-        # x = (y0p * x0 - y0 - y1p * x1 + y1) / (y0p - y1p)
+            Parameters: time_series -- t_i in increasing values
+                        data_series -- d_i corresponding to each t_i
 
-    # Intersection point of tangents
-    x_cp = (y2_prime * x2 - y2 - y1_prime * x1 + y1) / (y2_prime - y1_prime);
-    y_cp = y2_prime * x_cp - y2_prime * x2 + y2;
-    return int(x_cp), int(y_cp)
+            Returns: solution -- matrix containing the 4 solutions from solving the linear equations
+            """
+            # compute the data we will put into matrix A
+            A_values = []
+            for fn in A_fns:
+                A_values.append(fn(time_series, data_series))
+            # fill the A matrix with data
+            A_numerical = Matrix(4,4, A_values)
 
+            # compute the data we will put into the b vector
+            b_values = []
+            for fn in b_fns:
+                b_values.append(fn(time_series, data_series))
+            # fill the b vector with data
+            b_numerical = Matrix(4,1, b_values)
+
+            #print(A_numerical, b_numerical)
+
+            # solve for the unknowns in vector x
+            x_numerical = A_numerical.inv() * b_numerical
+
+            return x_numerical
+
+        # solve for the best fit in the x dimension
+        x_solutions = solve_for_cs(time_series=ts, data_series=xs)
+        # solve for the best fit in the y dimension
+        y_solutions = solve_for_cs(time_series=ts, data_series=ys)
+
+        # place the solutions into control points
+        best_fit_control_pts = [(int(x),int(y)) for x,y in zip(x_solutions, y_solutions)]
+
+        return best_fit_control_pts
+    def calc_quadratic_bezier(polynomial, x1, x2):
+
+        derivative = np.polyder(polynomial, 1)
+
+        y1 = polynomial(x1);
+        y1_prime = derivative(x1)
+        y2 = polynomial(x2);
+        y2_prime = derivative(x2);
+
+        # Find intersection of tangents
+            # line0: y - y0 = y0p * (x - x0)
+            # line1: y - y1 = y1p * (x - x1)
+            # line0: y = y0p * x - y0p * x0 + y0
+            # line1: y = y1p * x - y1p * x1 + y1
+            # y0p * x - y0p * x0 + y0 = y1p * x - y1p * x1 + y1
+            # y0p * x - y1p * x = y0p * x0 - y0 - y1p * x1 + y1
+            # x = (y0p * x0 - y0 - y1p * x1 + y1) / (y0p - y1p)
+
+        # Intersection point of tangents
+        x_cp = (y2_prime * x2 - y2 - y1_prime * x1 + y1) / (y2_prime - y1_prime);
+        y_cp = y2_prime * x_cp - y2_prime * x2 + y2;
+        return int(x_cp), int(y_cp)
+    def needsTransform(points):
+        #return abs(points[0][0]-points[int(len(points)/2)][0])<500 and abs(points[0][0]-points[-1][0])<500 #Assumption
+        for p1 in points:
+            for p2 in points:
+                if abs(p1[0]-p2[0]) < 4 and p2 is not p1:
+                    return True
+        return False
+
+    new_image = np.ones((2000,2000,3), np.uint8)*255
+
+    for f in features:
+        if collinear_approx(f.filteredPoints):
+            lineObj = Line(f.x1, f.y1, f.x2, f.y2, f.orderNum)
+            subFeatures.append(lineObj)
+        else:
+            for p in f.filteredPoints:
+                cv2.circle(new_image, (p[0], p[1]), 5, (255,0,0), -1)
+            if needsTransform(f.filteredPoints):
+                print("vert")
+                is_vertical = True
+                xs = [x for x,y in f.filteredPoints]; ys = [y for x,y in f.filteredPoints]
+                tmp = xs, ys
+                ys = tmp[0]; xs = tmp[1]
+            else:
+                xs = [x for x,y in f.filteredPoints]; ys = [y for x,y in f.filteredPoints]
+            polynomial = np.poly1d(np.polyfit(xs, ys, 4))
+            ys = [int(polynomial(x)) for x in xs]
+            if is_vertical:
+                tmp = xs, ys
+                ys = tmp[0]; xs = tmp[1]
+                is_vertical = False
+            polyPoints = zip(xs, ys)
+            for p in polyPoints:
+                cv2.circle(new_image, (p[0], p[1]), 5, (0,255,0), -1)
+
+            x_cp, y_cp = calc_quadratic_bezier(polynomial,f.x1,f.x2)
+            startPoint = (int(f.x1),int(f.y1))
+            controlPoint = (int(x_cp), int(y_cp))
+            print(startPoint, controlPoint)
+            cv2.line(new_image, startPoint,controlPoint, (0,0,255), 5)
+
+
+            curveObj = Curve(f.x1, f.y1, x_cp, y_cp, f.x2, f.y2, f.orderNum)
+            subFeatures.append(curveObj)
+
+    assignment = random.randint(0, 1000)
+    cv2.imwrite('/Users/theodoreseem/res.Network/Curve_Integration/test/test' + str(assignment) + '.png', new_image)
+
+
+    for z in subFeatures:
+        print(z.distance, z.degrees, z.x1, z.y1, z.x2, z.y2, z.x3, z.y3, z.orderNum)
+
+    return subFeatures
+
+def createImageList(subFeatures):
+
+    imageList = []
+    for subF in subFeatures:
+        if type(subF) == Line:
+            featureMeasure = feat_ext_map[str(floor_round(subF.distance,distance_round))],int(abs(floor_round(subF.degrees,degree_round)))
+            lineImage = line_Image_map[str(featureMeasure)]
+            #print(featureMeasure)
+            imageList.append(lineImage)
+        else:
+            featureMeasure = feat_ext_map[str(floor_round(subF.distance,distance_round))],int(abs(floor_round(subF.degrees,degree_round)))
+            curveImage = curve_Image_map[str(featureMeasure)]
+            #print(featureMeasure)
+            imageList.append(curveImage)
+
+    return imageList
+
+def createRSL(subFeatures, outputRSL):
+
+    openOutput = open(outputRSL, "w")
+
+    openOutput.write("first-point\n")
+    openOutput.write("frame-one\n")
+    openOutput.write("frame-two\n")
+    openOutput.write("second-point\n")
+
+    for subf in subFeatures:
+        wordOutput = "RSL-%s-%s" %(str(floor_round(float(subf.degrees),degree_round)),str(floor_round(float(subf.distance)*conversionShrinkage, distance_round)))
+        openOutput.write(wordOutput+ '\n')
+
+    openOutput.write("end-line")
+    openOutput.close()
+
+def createRIL(imageList, output_RIL):
+
+    files = ['/Users/theodoreseem/res.Network/Hasy-images/' + image for image in imageList]
+
+    result = Image.new("RGB", (500, 100))
+
+    for index, file in enumerate(files):
+        path = os.path.expanduser(file)
+        img = Image.open(path)
+        img.thumbnail((32, 32), Image.ANTIALIAS)
+        x = 50 + (index * 35)
+        y = 33#index % 2 * 32
+        w, h = img.size
+        #print('pos {0},{1} size {2},{3}'.format(x, y, w, h))
+        result.paste(img, (x, y, x + w, y + h))
+
+    result.save(os.path.expanduser(output_RIL))
+
+def cleanAndBuild(file, imageStore):
+
+    input_Image = master_Directory + imageStore + "/" + file + ".JPEG"
+    output_XML =  master_Directory + "xml_outputs/" + file + ".val"
+    output_RSL =  master_Directory + "rsl_outputs/" + file + ".gui"
+    output_RIL =  master_Directory + "ril_outputs/" + file + ".png"
+    output_cleaned =  master_Directory + "cleaned_images/" + file + ".png"
+
+    imageCleaned = clean_Image(input_Image)
+    image_vertices = retrieveVertices(imageCleaned)
+    DAG = createDAG(image_vertices)
+    initialFeatures = extract_initial_contours(DAG, imageCleaned)
+    refinedFeatures = divideFeatures(initialFeatures)
+    subFeatures = createSubFeatures(refinedFeatures)
+    imageList = createImageList(subFeatures)
+    createRSL(subFeatures, output_RSL)
+    if 'NO IMG' not in imageList:
+        createRIL(imageList, output_RIL)
+    else:
+        print("Skipping RIL Creation")
+
+
+
+
+#    height, width, channels = imageCleaned.shape
+#    new_image = np.ones((height,width,3), np.uint8)*255
+#    for f in range(len(initialFeatures)):
+#        featurePoints = initialFeatures[f][0]
+#        refinedPoints = refinedFeatures[f][0]
+#        delPoints = delineatedFeatures[f][0]
+
+#        for p in featurePoints:
+#            cv2.circle(new_image, (p[0], p[1]), 1, (255,0,0), -1)
+#        for m in refinedPoints:
+#            cv2.circle(new_image, (m[0], m[1]), 1, (0,255,0), -1)
+#        for m in delPoints:
+#            cv2.circle(new_image, (m[0], m[1]), 10, (0,0,255), -1)
+#    assignment = random.randint(0, 1000)
+#    cv2.imwrite('/Users/theodoreseem/res.Network/Curve_Integration/test/test' + str(assignment) + '.png', new_image)
+
+#NOT BEING USED
 def createXML(lines, output_file, height): #SUBSET FOR ONLY LINES
 
     editableOutput = open(output_file, "w")
@@ -413,7 +667,6 @@ def createXML(lines, output_file, height): #SUBSET FOR ONLY LINES
         editableOutput.write(line + "\n")
 
     editableOutput.close()
-
 def buildImageRepresentation(imageList, output_RIL):
 
     files = ['/Users/theodoreseem/res.Network/Hasy-images/' + image for image in imageList]
@@ -431,7 +684,6 @@ def buildImageRepresentation(imageList, output_RIL):
         result.paste(img, (x, y, x + w, y + h))
 
     result.save(os.path.expanduser(output_RIL))
-
 def create_RSL_files(xml_directory, rsl_directory):
     files = [f[:-4] for f in listdir(xml_directory) if f != '.DS_Store']
     for file in files:
@@ -461,121 +713,6 @@ def create_RSL_files(xml_directory, rsl_directory):
         editableOutput.write("end-line")
         editableOutput.close()
         readableInput.close()
-
-def RSL_to_XML(rsl):
-    xml = rsl[:-3] + "val"
-    readableInput = open(rsl, "r")
-    editableOutput = open(xml, "w")
-
-    startPoint = 4
-    currentID = startPoint
-
-    for line in repeatLines:
-        editableOutput.write(line + "\n")
-
-    for counter, line in enumerate(readableInput, start=-4):
-        if "RSL" in line:
-            if line[5] == "-":
-                angle = int(line[4:5])
-            elif line[6] == "-":
-                angle = int(line[4:6])
-            else:
-                angle = int(line[4:7])
-            if line[-4] == "-":
-                length = int(line[-3:])
-            elif line[-6] == "-":
-                length = int(line[-5:])
-            else:
-                length = int(line[-4:])
-            editableOutput.write("<point angle=\"%d\" basePoint=\"%d\" id=\"%d\" length=\"%.1f\" lineColor=\"black\" mx=\".1\" my=\".1\" name=\"B1\" type=\"endLine\" typeLine=\"hair\"/>\n" %(angle, counter+startPoint, counter+startPoint+1, length/50))
-            currentID = currentID + 1
-    editableOutput.write("<line firstPoint=\"%d\" id=\"%d\" lineColor=\"black\" secondPoint=\"%d\" typeLine=\"hair\"/>\n" %(currentID, currentID+1, startPoint))
-
-
-    for line in repeatLines2:
-        editableOutput.write(line + "\n")
-
-    editableOutput.close()
-
-def createImageList(initialFeatures, DAG):
-
-    final_featuresList = []
-
-    for f in range(len(initialFeatures)):
-        featurePoints = initialFeatures[f][0]
-        feature = findAssociatedFeature(featurePoints, DAG)
-        if collinear_approx(featurePoints):
-            lineObj = Line(feature.x1, feature.y1, feature.x2, feature.y2, feature.orderNum)
-            final_featuresList.append(lineObj)
-        else:
-            xs = [x for x,y in featurePoints]; ys = [y for x,y in featurePoints]
-            if abs(featurePoints[0][0]-featurePoints[int(len(featurePoints)/2)][0])<50 and abs(featurePoints[0][0]-featurePoints[-1][0])<50: #Assumption
-                tmp = xs, ys
-                ys = tmp[0]; xs = tmp[1]
-            polynomial = np.poly1d(np.polyfit(xs, ys, 3))
-            ys = [polynomial(x) for x in xs]
-            x_cp, y_cp = calc_quadratic_bezier(polynomial,feature.x1,feature.x2)
-            curveObj = Curve(feature.x1, feature.y1, x_cp, y_cp, feature.x2, feature.y2, feature.orderNum)
-            final_featuresList.append(curveObj)
-
-    imageList = []
-    for finFeature in final_featuresList:
-        if type(finFeature) == lineObj:
-            featureMeasure = feat_ext_map[str(floor_round(lineObj.distance,distance_round))],int(abs(floor_round(lineObj.degrees,degree_round)))
-            lineImage = line_Image_map[str(featureMeasure)]
-            print(featureMeasure)
-            imageList.append(lineImage)
-        else:
-            featureMeasure = feat_ext_map[str(floor_round(curveObj.distance2,distance_round))],int(abs(floor_round(curveObj.degrees2,degree_round)))
-            curveImage = curve_Image_map[str(featureMeasure)]
-            print(featureMeasure)
-            imageList.append(curveImage)
-
-    return imageList
-
-def cleanAndBuild(file, imageStore):
-
-
-    input_Image = master_Directory + imageStore + "/" + file + ".JPEG"
-    output_XML =  master_Directory + "xml_outputs/" + file + ".val"
-    output_RIL =  master_Directory + "ril_outputs/" + file + ".png"
-    output_cleaned =  master_Directory + "cleaned_images/" + file + ".png"
-
-    imageCleaned = clean_Image(input_Image)
-    image_vertices = retrieveVertices(imageCleaned)
-    DAG = createDAG(image_vertices)
-    initialFeatures = extract_initial_contours(DAG, imageCleaned)
-    refinedFeatures, delineatedFeatures = subdivisionFeatures(initialFeatures)
-
-
-
-    height, width, channels = imageCleaned.shape
-    new_image = np.ones((height,width,3), np.uint8)*255
-    for f in range(len(initialFeatures)):
-        featurePoints = initialFeatures[f][0]
-        refinedPoints = refinedFeatures[f][0]
-        delPoints = delineatedFeatures[f][0]
-
-        for p in featurePoints:
-            cv2.circle(new_image, (p[0], p[1]), 1, (255,0,0), -1)
-        for m in refinedPoints:
-            cv2.circle(new_image, (m[0], m[1]), 1, (0,255,0), -1)
-        for m in delPoints:
-            cv2.circle(new_image, (m[0], m[1]), 10, (0,0,255), -1)
-    assignment = random.randint(0, 1000)
-    cv2.imwrite('/Users/theodoreseem/res.Network/Curve_Integration/test/test' + str(assignment) + '.png', new_image)
-
-
-
-    #imageList = createImageList(initialFeatures, DAG)
-
-
-    #SHORTCUT
-    #if 'NO IMG' not in imageList:
-    #cv2.imwrite(output_cleaned, imageCleaned)
-        #createXML(lineList, output_XML, 700)
-        #buildImageRepresentation(imageList, output_RIL)
-
 
 
 if __name__ == "__main__":
@@ -611,7 +748,3 @@ if __name__ == "__main__":
         for count, file in enumerate(files[:20]):
             print("#", count, "- Processing: ", file)
             cleanAndBuild(file, imgStore)
-
-#    create_RSL_files(master_Directory + "xml_outputs/", master_Directory + "rsl_outputs/")
-
-#    RSL_to_XML("rsl_outputs/KT-6017-V-BODFT-2.gui")
