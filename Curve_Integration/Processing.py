@@ -15,6 +15,9 @@ import statistics
 import random
 np.set_printoptions(threshold=np.nan)
 
+
+from sympy import Matrix
+
 ## TODO: Fix the placement of Corners (use overlap of dst and curve and then find centroid), need notches
 ## TODO: Fix the DAG (seems to be currently out of place)
 ## TODO: Fix the bezier curve calculation (Second point seems to be endpoint)
@@ -359,6 +362,7 @@ def divideFeatures(features):
 
 def createSubFeatures(features):
 
+
     subFeatures = []
     is_vertical = False
     def cubicControlPoints(points):
@@ -522,6 +526,7 @@ def createSubFeatures(features):
                 ys = tmp[0]; xs = tmp[1]
             else:
                 xs = [x for x,y in f.filteredPoints]; ys = [y for x,y in f.filteredPoints]
+
             polynomial = np.poly1d(np.polyfit(xs, ys, 4))
             ys = [int(polynomial(x)) for x in xs]
             if is_vertical:
@@ -533,10 +538,7 @@ def createSubFeatures(features):
                 cv2.circle(new_image, (p[0], p[1]), 5, (0,255,0), -1)
 
             x_cp, y_cp = calc_quadratic_bezier(polynomial,f.x1,f.x2)
-            startPoint = (int(f.x1),int(f.y1))
-            controlPoint = (int(x_cp), int(y_cp))
-            print(startPoint, controlPoint)
-            cv2.line(new_image, startPoint,controlPoint, (0,0,255), 5)
+            cv2.line(new_image, (f.x1, f.y1), (x_cp, y_cp), (0,0,255), 5)
 
 
             curveObj = Curve(f.x1, f.y1, x_cp, y_cp, f.x2, f.y2, f.orderNum)
@@ -544,10 +546,6 @@ def createSubFeatures(features):
 
     assignment = random.randint(0, 1000)
     cv2.imwrite('/Users/theodoreseem/res.Network/Curve_Integration/test/test' + str(assignment) + '.png', new_image)
-
-
-    for z in subFeatures:
-        print(z.distance, z.degrees, z.x1, z.y1, z.x2, z.y2, z.x3, z.y3, z.orderNum)
 
     return subFeatures
 
