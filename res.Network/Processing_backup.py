@@ -19,20 +19,20 @@ np.set_printoptions(threshold=np.nan)
 
 from sympy import Matrix
 
-## TODO: Fix the placement of Corners (use overlap of dst and curve and then find centroid), need notches (Think placing in general spot works just as well)
+## TODO: Fix the placement of Corners (use overlap of dst and curve and then find centroid), need notches
 ## TODO: Fix the bezier curve calculation (Second point seems to be endpoint)
-## TODO: Fix DAG with new features
+## TODO: Replace the carcoded paths thorughout the file
+
 
 ## TODO: Clean up the code in both res.Network accounts (GitHub, AWS)
-## TODO: RSL to XML compiler and update documentation
-## TODO: Go and comment new parts of the code
 
-
-lineImage_mapping = ''; featureExt_mapping = ''; curveImage_mapping = ''; master_Directory = ''
 degree_round = 10
 distance_round = 25
 conversionShrinkage = 50
 
+lineImage_mapping = '/Users/theodoreseem/res.Network/Curve_Integration/dictionaries/Line-Image.json'
+featureExt_mapping = '/Users/theodoreseem/res.Network/Curve_Integration/dictionaries/Feature-Extraction.json'
+curveImage_mapping = '/Users/theodoreseem/res.Network/Curve_Integration/dictionaries/Curve-Image.json'
 
 class Feature:
 
@@ -137,7 +137,7 @@ def findAssociatedFeature(contour, featureList):
         matches = []
         for coord in coord_set:
             for cont in contour:
-                if is_close(coord[0], coord[1], cont[0], cont[1], 40):
+                if is_close(coord[0], coord[1], cont[0], cont[1], 20):
                     matches.append(1)
                     break; # Only possible to find a single match per vertex (so needs 2 matches)
         if len(matches)==2:
@@ -147,21 +147,6 @@ def findAssociatedFeature(contour, featureList):
 
 def floor_round(x, roundNum):
     return round(math.floor(x/roundNum))*roundNum
-
-def clockwiseangle_and_distance(point, height, width):
-        origin = [height/2, width/2]
-        refvec = [0, 1]
-        vector = [point[0]-origin[0], point[1]-origin[1]]
-        lenvector = math.hypot(vector[0], vector[1])
-        if lenvector == 0:
-            return -math.pi, 0
-        normalized = [vector[0]/lenvector, vector[1]/lenvector]
-        dotprod  = normalized[0]*refvec[0] + normalized[1]*refvec[1]
-        diffprod = refvec[1]*normalized[0] - refvec[0]*normalized[1]
-        angle = math.atan2(diffprod, dotprod)
-        if angle < 0:
-            return 2*math.pi+angle, lenvector
-        return angle, lenvector
 
 def is_close(x1, y1, x2, y2, d):
     distance = int(math.sqrt((x2-x1)**2 + (y2-y1)**2))
@@ -205,16 +190,6 @@ def clean_Image(image):
 
 def retrieveVertices(img):
 
-    def removearray(L, arr):
-        ind = 0
-        size = len(L)
-        while ind != size and not np.array_equal(L[ind], arr):
-            ind += 1
-        if ind != size:
-            L.pop(ind)
-        else:
-            raise ValueError('array not found in list.')
-
     '''get image dimensions, thin the pattern lines out on the image, convert to grayscale and blur (all optimizes corner detection) '''
 
     height, width, channels = img.shape
@@ -223,7 +198,7 @@ def retrieveVertices(img):
     blur = cv2.blur(gray,(2,2))
 
     '''Find the corner orientation (generates blobs of pixels where the corner orients), thins out the blob area and thresholds to compact the area'''
-    dst = cv2.cornerHarris(np.float32(gray),23,17,.21)  #3,11,.1
+    dst = cv2.cornerHarris(np.float32(gray),21,9,.1)  #3,11,.1
     dst = cv2.erode(dst,np.ones((3,3),np.uint8),None)
     ret, dst = cv2.threshold(dst,127,255,cv2.THRESH_BINARY)
     dst = np.uint8(dst)
@@ -239,15 +214,6 @@ def retrieveVertices(img):
     if centerVertex:
         vertices.remove(centerVertex[0])
 
-    '''Filter out the vertices which due to the corner detection clump together. Not really distinct vertices so only keep one of them'''
-    for v1 in vertices:
-        close = []
-        for v2 in vertices:
-            if is_close(v1[0], v1[1], v2[0], v2[1], 50) and v1 is not v2:
-                close.append(v2)
-        for c in close:
-            removearray(vertices, c)
-
     return vertices
 
 def createDAG(vertices, img):
@@ -256,9 +222,23 @@ def createDAG(vertices, img):
 
     def get_dist(x1,y1,x2,y2):
         return int(math.sqrt((x2-x1)**2 + (y2-y1)**2))
+    def clockwiseangle_and_distance(point):
+        origin = [height/2, width/2]
+        refvec = [0, 1]
+        vector = [point[0]-origin[0], point[1]-origin[1]]
+        lenvector = math.hypot(vector[0], vector[1])
+        if lenvector == 0:
+            return -math.pi, 0
+        normalized = [vector[0]/lenvector, vector[1]/lenvector]
+        dotprod  = normalized[0]*refvec[0] + normalized[1]*refvec[1]
+        diffprod = refvec[1]*normalized[0] - refvec[0]*normalized[1]
+        angle = math.atan2(diffprod, dotprod)
+        if angle < 0:
+            return 2*math.pi+angle, lenvector
+        return angle, lenvector
 
     '''Sortes the vertices based on their clockwise orientation to the center using above fucntion as key'''
-    ccWise = sorted(vertices, key= lambda point: clockwiseangle_and_distance(point, height, width))
+    ccWise = sorted(vertices, key=clockwiseangle_and_distance)
 
     '''Create a feature list (a feature is an implicit line connecting two endpoints(vertices)) and creates ordered list based on the vertices ordering'''
     featureList = []
@@ -272,7 +252,6 @@ def createDAG(vertices, img):
     return featureList
 
 def extract_initial_contours(DAG, img):
-
 
     '''Get the endpoints of the features, thicken image lines and convert to grayscale, then slightly thicken lines and threshold the image'''
     vertices = [v.endpoints[0] for v in DAG]
@@ -288,11 +267,9 @@ def extract_initial_contours(DAG, img):
     contourArray = np.vstack(contours[1]).squeeze()
     contourPoints = list(map(tuple, contourArray))
 
-    circle_size = height*width
-
     def isCloseToVert(point):
         for v in vertices:
-            if is_close(point[0], point[1], v[0], v[1], 50):
+            if is_close(point[0], point[1], v[0], v[1], 15):
                 return True
         return False
 
@@ -391,6 +368,8 @@ def divideFeatures(features):
 
     newFeatureSet = []
 
+    ##TODO: Fix DAG with new features
+
 
     for f in features:
         if f.distance > 200:
@@ -403,18 +382,12 @@ def divideFeatures(features):
                     p.slopetToAverage = round(math.atan2(AveragePoint.y-p.y, AveragePoint.x-p.x),2)*-1
                 sortedFiltered = sorted(f.filteredPoints, key=lambda p: p.slopetToAverage)
                 firstHalfPoints = sortedFiltered[:len(sortedFiltered)//2]; secondHalfPoints = sortedFiltered[len(sortedFiltered)//2:];
-                feature1 = Feature(firstHalfPoints[0].x, firstHalfPoints[0].y,firstHalfPoints[len(firstHalfPoints)-1].x, firstHalfPoints[len(firstHalfPoints)-1].y)
-                feature1.filteredPoints = firstHalfPoints
-                feature1.orderNum = f.orderNum
-
-                feature2 = Feature(secondHalfPoints[0].x, secondHalfPoints[0].y,secondHalfPoints[len(secondHalfPoints)-1].x, secondHalfPoints[len(secondHalfPoints)-1].y)
-                feature2.filteredPoints = secondHalfPoints
-                feature2.orderNum = f.orderNum
-
-                endpointOrder = sorted([feature1.endpoints, feature2.endpoints], key=clockwiseangle_and_distance)
-                print(endpointOrder)
-
-
+                feature_1 = Feature(firstHalfPoints[0].x, firstHalfPoints[0].y,firstHalfPoints[len(firstHalfPoints)-1].x, firstHalfPoints[len(firstHalfPoints)-1].y)
+                feature_1.filteredPoints = firstHalfPoints
+                feature_1.orderNum = f.orderNum
+                feature_2 = Feature_1 = Feature(secondHalfPoints[0].x, secondHalfPoints[0].y,secondHalfPoints[len(secondHalfPoints)-1].x, secondHalfPoints[len(secondHalfPoints)-1].y)
+                feature_2.filteredPoints = secondHalfPoints
+                feature_2.orderNum = f.orderNum
                 newFeatureSet.append(feature_1); newFeatureSet.append(feature_2)
             #closest_toAvg = closestTo(AveragePoint, f.filteredPoints)
         else:
@@ -664,16 +637,6 @@ def createRIL(imageList, output_RIL):
 
     result.save(os.path.expanduser(output_RIL))
 
-def set_paths(dir):
-    global master_Directory; global lineImage_mapping;
-    global featureExt_mapping;  global curveImage_mapping
-
-    master_Directory = dir
-    lineImage_mapping =  dir + 'dictionaries/Line-Image.json'
-    featureExt_mapping = dir + 'dictionaries/Feature-Extraction.json'
-    curveImage_mapping = dir + 'dictionaries/Curve-Image.json'
-
-
 def cleanAndBuild(file, imageStore):
 
     input_Image = master_Directory + imageStore + "/" + file + ".JPEG"
@@ -684,14 +647,6 @@ def cleanAndBuild(file, imageStore):
 
     imageCleaned = clean_Image(input_Image)
     image_vertices = retrieveVertices(imageCleaned)
-
-
-    assignment = random.randint(0, 1000)
-    for v in image_vertices:
-        cv2.circle(imageCleaned, (v[0], v[1]), 10, (0, 0, 255), -1)
-    cv2.imwrite(master_Directory + 'test2/testing' + str(assignment) + '.png', imageCleaned)
-
-
     DAG = createDAG(image_vertices, imageCleaned)
     initialFeatures = extract_initial_contours(DAG, imageCleaned)
     refinedFeatures = divideFeatures(initialFeatures)
@@ -706,8 +661,10 @@ def cleanAndBuild(file, imageStore):
         print("Skipping RIL Creation")
 
 
-  #  height, width, channels = imageCleaned.shape
- #   new_image = np.ones((height,width,3), np.uint8)*255
+
+
+#    height, width, channels = imageCleaned.shape
+#    new_image = np.ones((height,width,3), np.uint8)*255
 #    for f in range(len(initialFeatures)):
 #        featurePoints = initialFeatures[f][0]
 #        refinedPoints = refinedFeatures[f][0]
@@ -722,7 +679,7 @@ def cleanAndBuild(file, imageStore):
 #    assignment = random.randint(0, 1000)
 #    cv2.imwrite('/Users/theodoreseem/res.Network/Curve_Integration/test/test' + str(assignment) + '.png', new_image)
 
-#Depricated
+#NOT BEING USED
 def createXML(lines, output_file, height): #SUBSET FOR ONLY LINES
 
     editableOutput = open(output_file, "w")
@@ -747,6 +704,52 @@ def createXML(lines, output_file, height): #SUBSET FOR ONLY LINES
         editableOutput.write(line + "\n")
 
     editableOutput.close()
+def buildImageRepresentation(imageList, output_RIL):
+
+    files = ['/Users/theodoreseem/res.Network/Hasy-images/' + image for image in imageList]
+
+    result = Image.new("RGB", (500, 100))
+
+    for index, file in enumerate(files):
+        path = os.path.expanduser(file)
+        img = Image.open(path)
+        img.thumbnail((32, 32), Image.ANTIALIAS)
+        x = 50 + (index * 35)
+        y = 33#index % 2 * 32
+        w, h = img.size
+        #print('pos {0},{1} size {2},{3}'.format(x, y, w, h))
+        result.paste(img, (x, y, x + w, y + h))
+
+    result.save(os.path.expanduser(output_RIL))
+def create_RSL_files(xml_directory, rsl_directory):
+    files = [f[:-4] for f in listdir(xml_directory) if f != '.DS_Store']
+    for file in files:
+        xml_file = xml_directory + file + ".val"
+        rsl_file_name = rsl_directory + file + ".gui"
+        readableInput = open(xml_file, "r")
+        editableOutput = open(rsl_file_name, "w")
+
+        editableOutput.write("first-point\n")
+        editableOutput.write("frame-one\n")
+        editableOutput.write("frame-two\n")
+        editableOutput.write("second-point\n")
+
+        for counter, line in enumerate(readableInput):
+            if counter > 14 and "<point" in line:
+                angle = 0; length = 0
+                words = line.split()
+                for word in words:
+                    if "angle" in word:
+                        angle = re.findall('"([^"]*)"', word)[0]
+                    if "length" in word:
+                        length= re.findall('"([^"]*)"', word)[0]
+                wordOutput = "RSL-%s-%s" %(str(floor_round(float(angle),degree_round)),str(floor_round(float(length)*xml_shrink, distance_round)))
+                editableOutput.write(wordOutput)
+                editableOutput.write('\n')
+
+        editableOutput.write("end-line")
+        editableOutput.close()
+        readableInput.close()
 
 
 if __name__ == "__main__":
@@ -758,7 +761,6 @@ if __name__ == "__main__":
         Argument1: <single/multi> - Determines whether you process one file or many
         Argument2: <location> This is either the file's name or the folder location of multiple documents.
                               Single file must be stand alone within master directory ending in JPEG
-        Argument3: <current directory> Current folder location the file is being run from. This allows the model to be run on any machine
     '''
 
     argv = sys.argv[1:]
@@ -770,7 +772,7 @@ if __name__ == "__main__":
         print("Error: not enough argument supplied: \n Processing.py <single/multi> <Image/Image_Directory> <current_Directory>")
         exit(0)
 
-    set_paths(curDir)
+    master_Directory = curDir
 
     line_Image_map, feat_ext_map, curve_Image_map = loadDictionaries()
 
@@ -780,6 +782,6 @@ if __name__ == "__main__":
         cleanAndBuild(file, "")
     else:
         files = [f[:-5] for f in listdir(master_Directory + imgStore) if f != '.DS_Store']
-        for count, file in enumerate(files[10:]):
+        for count, file in enumerate(files[:20]):
             print("#", count, "- Processing: ", file)
             cleanAndBuild(file, imgStore)
