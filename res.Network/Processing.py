@@ -318,15 +318,6 @@ def extract_initial_contours(DAG, img):
 
 def divideFeatures(features):
 
-
-
-    #Filter the points
-    #Find the center point
-    #Divide filter points into two groups
-    #create two new features
-    #replace previous feature with the two new features in the DAG
-    #run the clockwise function on the new features endpoints to determine first or last
-
     def iswWithin(bx1, bx2, by1, by2, p):
         if bx1<p[0]<bx2 and by1<p[1]<by2:
             return True
@@ -662,6 +653,8 @@ def cleanAndBuild(file, imageStore):
     initialFeatures = extract_initial_contours(DAG, imageCleaned)
     refinedFeatures = divideFeatures(initialFeatures)
     subFeatures = createSubFeatures(refinedFeatures)
+    for s in subFeatures:
+        print(s.distance, s.degrees)
     imageList = createImageList(subFeatures)
     if 'NO IMG' not in imageList:
         createRIL(imageList, output_RIL)
