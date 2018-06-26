@@ -10,6 +10,7 @@ import math
 import numpy.polynomial.polynomial as poly
 from skimage import util
 import re
+import copy
 from PIL import Image
 import statistics
 import random
@@ -19,8 +20,11 @@ np.set_printoptions(threshold=np.nan)
 from sympy import Matrix
 
 ## TODO: Fix the placement of Corners (use overlap of dst and curve and then find centroid), need notches
-## TODO: Fix the DAG (seems to be currently out of place)
 ## TODO: Fix the bezier curve calculation (Second point seems to be endpoint)
+## TODO: Replace the carcoded paths thorughout the file
+
+
+## TODO: Clean up the code in both res.Network accounts (GitHub, AWS)
 
 degree_round = 10
 distance_round = 25
@@ -95,8 +99,11 @@ class Curve(Feature):
 
 class Point:
 
-    def __init__(self, x, y, cluster):
-        self.x = x; self.y = y; self.cluster = cluster
+    #Used in the partitioning of features
+    slopetToAverage = ...;
+
+    def __init__(self, x, y):
+        self.x = x; self.y = y;
 
 def my_round(x, roundNum):
     return round(x/roundNum)*roundNum
@@ -123,7 +130,7 @@ def collinear_approx(Points):
         num = abs(y_diff*x3 - x_diff*y3 + x2*y1 - y2*x1)
         den = math.sqrt(y_diff**2 + x_diff**2)
         dist = num/den
-        if dist>8: return False
+        if dist>4: return False
     return True
 
 def findAssociatedFeature(contour, featureList):
@@ -211,12 +218,14 @@ def retrieveVertices(img):
 
     return vertices
 
-def createDAG(vertices):
+def createDAG(vertices, img):
+
+    height, width, channels = img.shape
 
     def get_dist(x1,y1,x2,y2):
         return int(math.sqrt((x2-x1)**2 + (y2-y1)**2))
     def clockwiseangle_and_distance(point):
-        origin = [700, 700]
+        origin = [height/2, width/2]
         refvec = [0, 1]
         vector = [point[0]-origin[0], point[1]-origin[1]]
         lenvector = math.hypot(vector[0], vector[1])
@@ -297,20 +306,36 @@ def extract_initial_contours(DAG, img):
         indices = [t[::-1] for t in indices]
 
         feature = findAssociatedFeature(indices, DAG)
-        feature.points = indices
+        indexPoints = []
+        for i in indices:
+            indexPoints.append(Point(i[0],i[1]))
+        feature.points = indexPoints
         filledFeatures.append(feature)
-        #componentArray[component-1].append(indices)
 
-    #return componentArray
+    filledFeatures.sort(key=lambda x: DAG.index(x))
+
     return filledFeatures
 
 def divideFeatures(features):
+
+
+
+    #Filter the points
+    #Find the center point
+    #Divide filter points into two groups
+    #create two new features
+    #replace previous feature with the two new features in the DAG
+    #run the clockwise function on the new features endpoints to determine first or last
 
     def iswWithin(bx1, bx2, by1, by2, p):
         if bx1<p[0]<bx2 and by1<p[1]<by2:
             return True
         return False
-    def filter_points(points, step_size = 75):
+    def filter_points(pointsObjs, step_size = 75):
+
+        points = []
+        for p in pointsObjs:
+            points.append((p.x,p.y))
 
         '''potential TODO Could get facier here and remove all points within x of any other point. This would help with vertical line deteciton later on'''
         filtered_points = []
@@ -332,7 +357,11 @@ def divideFeatures(features):
                     avg_x, avg_y = 0,0
                 if avg_x != 0 and avg_y !=0: filtered_points.append((avg_x, avg_y))
 
-        return filtered_points
+        filteredPointObjs = []
+        for p in filtered_points:
+            filteredPointObjs.append(Point(p[0],p[1]))
+
+        return filteredPointObjs
     def closestTo(anchor, points):
         closestDist = int(math.sqrt((points[0][0]-anchor[0])**2 + (points[0][1]-anchor[1])**2))
         closestPoint = points[0]
@@ -348,17 +377,35 @@ def divideFeatures(features):
         If a feature's length is less than some (200) pixels in length, the sub pixels are populated as the endpoints (because no need to divide feature further)
     '''
 
+    newFeatureSet = []
+
+    ##TODO: Fix DAG with new features
+
+
     for f in features:
         if f.distance > 200:
-            f.filteredPoints  = filter_points(f.points)
-            AveragePoint = filter_points(f.points, 100000)
-            closest_toAvg = (AveragePoint, f.filteredPoints)
-            #Take the average point and divid the filtered points into groups based off of quadrants
-            #for all the points in each quadrant
+            f.filteredPoints  = filter_points(f.points);
+            f.filteredPoints.extend([Point(f.endpoints[0][0], f.endpoints[0][1]),Point(f.endpoints[1][0], f.endpoints[1][1])])
+            AveragePoint = filter_points(f.points, 100000)[0]
+            indices = [(p.x,p.y) for p in f.filteredPoints]
+            if not collinear_approx(indices):   #if it is a curve
+                for p in f.filteredPoints:
+                    p.slopetToAverage = round(math.atan2(AveragePoint.y-p.y, AveragePoint.x-p.x),2)*-1
+                sortedFiltered = sorted(f.filteredPoints, key=lambda p: p.slopetToAverage)
+                firstHalfPoints = sortedFiltered[:len(sortedFiltered)//2]; secondHalfPoints = sortedFiltered[len(sortedFiltered)//2:];
+                feature_1 = Feature(firstHalfPoints[0].x, firstHalfPoints[0].y,firstHalfPoints[len(firstHalfPoints)-1].x, firstHalfPoints[len(firstHalfPoints)-1].y)
+                feature_1.filteredPoints = firstHalfPoints
+                feature_1.orderNum = f.orderNum
+                feature_2 = Feature_1 = Feature(secondHalfPoints[0].x, secondHalfPoints[0].y,secondHalfPoints[len(secondHalfPoints)-1].x, secondHalfPoints[len(secondHalfPoints)-1].y)
+                feature_2.filteredPoints = secondHalfPoints
+                feature_2.orderNum = f.orderNum
+                newFeatureSet.append(feature_1); newFeatureSet.append(feature_2)
+            #closest_toAvg = closestTo(AveragePoint, f.filteredPoints)
         else:
-            f.filteredPoints = f.endpoints
+            f.filteredPoints = filter_points(f.points)
+            newFeatureSet.append(copy.deepcopy(f))
 
-    return features
+    return newFeatureSet
 
 def createSubFeatures(features):
 
@@ -505,27 +552,28 @@ def createSubFeatures(features):
         #return abs(points[0][0]-points[int(len(points)/2)][0])<500 and abs(points[0][0]-points[-1][0])<500 #Assumption
         for p1 in points:
             for p2 in points:
-                if abs(p1[0]-p2[0]) < 4 and p2 is not p1:
+                if abs(p1.x-p2.x) < 4 and p2 is not p1:
                     return True
         return False
 
     new_image = np.ones((2000,2000,3), np.uint8)*255
 
     for f in features:
-        if collinear_approx(f.filteredPoints):
+        indices = [(p.x,p.y) for p in f.filteredPoints]
+        if collinear_approx(indices):
             lineObj = Line(f.x1, f.y1, f.x2, f.y2, f.orderNum)
             subFeatures.append(lineObj)
         else:
             for p in f.filteredPoints:
-                cv2.circle(new_image, (p[0], p[1]), 5, (255,0,0), -1)
+                cv2.circle(new_image, (p.x, p.y), 5, (255,0,0), -1)
             if needsTransform(f.filteredPoints):
-                print("vert")
+                print(f.endpoints)
                 is_vertical = True
-                xs = [x for x,y in f.filteredPoints]; ys = [y for x,y in f.filteredPoints]
+                xs = [p.x for p in f.filteredPoints]; ys = [p.y for p in f.filteredPoints]
                 tmp = xs, ys
                 ys = tmp[0]; xs = tmp[1]
             else:
-                xs = [x for x,y in f.filteredPoints]; ys = [y for x,y in f.filteredPoints]
+                xs = [p.x for p in f.filteredPoints]; ys = [p.y for p in f.filteredPoints]
 
             polynomial = np.poly1d(np.polyfit(xs, ys, 4))
             ys = [int(polynomial(x)) for x in xs]
@@ -610,14 +658,14 @@ def cleanAndBuild(file, imageStore):
 
     imageCleaned = clean_Image(input_Image)
     image_vertices = retrieveVertices(imageCleaned)
-    DAG = createDAG(image_vertices)
+    DAG = createDAG(image_vertices, imageCleaned)
     initialFeatures = extract_initial_contours(DAG, imageCleaned)
     refinedFeatures = divideFeatures(initialFeatures)
     subFeatures = createSubFeatures(refinedFeatures)
     imageList = createImageList(subFeatures)
-    createRSL(subFeatures, output_RSL)
     if 'NO IMG' not in imageList:
         createRIL(imageList, output_RIL)
+        createRSL(subFeatures, output_RSL)
     else:
         print("Skipping RIL Creation")
 
@@ -726,7 +774,7 @@ if __name__ == "__main__":
 
     argv = sys.argv[1:]
     arg_length = len(argv)
-    if arg_length != 0:
+    if arg_length == 2:
         if argv[0] == "single":
             imgStore = argv[1]
         else:
