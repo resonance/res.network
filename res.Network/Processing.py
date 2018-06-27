@@ -19,9 +19,11 @@ np.set_printoptions(threshold=np.nan)
 
 from sympy import Matrix
 
-## TODO: Fix the placement of Corners (use overlap of dst and curve and then find centroid), need notches (Think placing in general spot works just as well)
+
+#!! Patterns cant have double back curves, patterns cant have double back vertices
+
 ## TODO: Fix the bezier curve calculation (Second point seems to be endpoint)
-## TODO: Fix DAG with new features
+## TODO: Fix DAG with new features (might need to add the endpoints to the calculation)
 
 ## TODO: Clean up the code in both res.Network accounts (GitHub, AWS)
 ## TODO: RSL to XML compiler and update documentation
@@ -106,6 +108,43 @@ class Point:
 def my_round(x, roundNum):
     return round(x/roundNum)*roundNum
 
+def filter_points(pointsObjs, step_size = 75):
+
+    def isWithin(bx1, bx2, by1, by2, p):
+        if bx1<p[0]<bx2 and by1<p[1]<by2:
+            return True
+        return False
+
+    points = []
+    for p in pointsObjs:
+        points.append((p.x,p.y))
+
+    '''potential TODO Could get facier here and remove all points within x of any other point. This would help with vertical line deteciton later on'''
+    filtered_points = []
+    smallestX = min(points, key=lambda x:x[0])[0]; largestX = max(points, key=lambda x:x[0])[0]
+    smallestY = min(points, key=lambda x:x[1])[1]; largestY = max(points, key=lambda x:x[1])[1]
+    for x in range(smallestX,largestX,step_size):
+        for y in range(smallestY,largestY,step_size):
+            subPoints = []
+            for p in points:
+                if isWithin(x, x+step_size, y, y+step_size, p):
+                    subPoints.append(p)
+            xs = [point[0] for point in subPoints]
+            ys = [point[1] for point in subPoints]
+            if xs:
+                avg_x = statistics.mean(xs)
+            if ys:
+                avg_y = statistics.mean(ys)
+            else:
+                avg_x, avg_y = 0,0
+            if avg_x != 0 and avg_y !=0: filtered_points.append((avg_x, avg_y))
+
+    filteredPointObjs = []
+    for p in filtered_points:
+        filteredPointObjs.append(Point(p[0],p[1]))
+
+    return filteredPointObjs
+
 def collinear_exact(Points):
     Points.sort(key=lambda x: x[0])
     x1, y1 = Points[0]
@@ -131,37 +170,19 @@ def collinear_approx(Points):
         if dist>4: return False
     return True
 
-def findAssociatedFeature(contour, featureList):
-    for f in featureList:
-        coord_set = [(f.x1, f.y1),(f.x2, f.y2)]
-        matches = []
-        for coord in coord_set:
-            for cont in contour:
-                if is_close(coord[0], coord[1], cont[0], cont[1], 40):
-                    matches.append(1)
-                    break; # Only possible to find a single match per vertex (so needs 2 matches)
-        if len(matches)==2:
-            return f
-    print("Internal Error: associated feature not found")
-    exit(0)
-
 def floor_round(x, roundNum):
     return round(math.floor(x/roundNum))*roundNum
 
-def clockwiseangle_and_distance(point, height, width):
-        origin = [height/2, width/2]
-        refvec = [0, 1]
-        vector = [point[0]-origin[0], point[1]-origin[1]]
-        lenvector = math.hypot(vector[0], vector[1])
-        if lenvector == 0:
-            return -math.pi, 0
-        normalized = [vector[0]/lenvector, vector[1]/lenvector]
-        dotprod  = normalized[0]*refvec[0] + normalized[1]*refvec[1]
-        diffprod = refvec[1]*normalized[0] - refvec[0]*normalized[1]
-        angle = math.atan2(diffprod, dotprod)
-        if angle < 0:
-            return 2*math.pi+angle, lenvector
-        return angle, lenvector
+def clockwiseangle(point, height, width):
+
+        x1 = width/2; y1 =  height/2
+        x2 = point.item(0); y2 = height - point.item(1)
+        angle = round(math.atan2(y2 - y1, x2 - x1), 2) * -1
+        if angle > 0:
+            return (int(angle * 57.2958))
+        degree = int(360 - abs(angle * 57.2958))
+        if degree == 360: degree = 0
+        return degree
 
 def is_close(x1, y1, x2, y2, d):
     distance = int(math.sqrt((x2-x1)**2 + (y2-y1)**2))
@@ -177,7 +198,7 @@ def loadDictionaries():
         curveImg_mapping = json.load(data_file); curveImg_mapping = defaultdict(lambda: "NO IMG", curveImg_mapping)
     return lineImg_mapping, fExt_mapping, curveImg_mapping
 
-def clean_Image(image):
+def clean_Image(image, file):
 
     '''Reads image, creates a blank copy for later, adds a white border to reduce image up against edges and copies every non-fully black pixel to white pixels to reduce noise'''
     img = cv2.imread(image)
@@ -201,6 +222,9 @@ def clean_Image(image):
     pattern_contour = contours_by_size[-2][1]
     cv2.drawContours(new_image, pattern_contour, -1, (0,0,0), 1)
     new_image = cv2.erode(new_image, kernel, iterations = 2)
+
+    cv2.imwrite(master_Directory + 'cleaned_images/' + file + '.png', new_image)
+
     return new_image
 
 def retrieveVertices(img):
@@ -223,7 +247,7 @@ def retrieveVertices(img):
     blur = cv2.blur(gray,(2,2))
 
     '''Find the corner orientation (generates blobs of pixels where the corner orients), thins out the blob area and thresholds to compact the area'''
-    dst = cv2.cornerHarris(np.float32(gray),23,17,.21)  #3,11,.1
+    dst = cv2.cornerHarris(np.float32(gray),27,9,.16)  #first parameter is window to look for corner in, second is sensitivity (if below 3, will pick up jagged pixels in lines, last - if you increase by a few decimals will only pick up sharp corners
     dst = cv2.erode(dst,np.ones((3,3),np.uint8),None)
     ret, dst = cv2.threshold(dst,127,255,cv2.THRESH_BINARY)
     dst = np.uint8(dst)
@@ -258,7 +282,7 @@ def createDAG(vertices, img):
         return int(math.sqrt((x2-x1)**2 + (y2-y1)**2))
 
     '''Sortes the vertices based on their clockwise orientation to the center using above fucntion as key'''
-    ccWise = sorted(vertices, key= lambda point: clockwiseangle_and_distance(point, height, width))
+    ccWise = sorted(vertices, key=lambda point: clockwiseangle(point, height, width))
 
     '''Create a feature list (a feature is an implicit line connecting two endpoints(vertices)) and creates ordered list based on the vertices ordering'''
     featureList = []
@@ -269,15 +293,33 @@ def createDAG(vertices, img):
     featureList.append(feat)
     for count, f in enumerate(featureList):
         f.orderNum = count
+
     return featureList
 
 def extract_initial_contours(DAG, img):
 
+    def findAssociatedFeature(contour, featureList):  # Only possible to find a single match per vertex (so needs 2 matches)
 
-    '''Get the endpoints of the features, thicken image lines and convert to grayscale, then slightly thicken lines and threshold the image'''
+        for f in featureList:
+            #print(f)
+            matches = []
+            for coord in f.endpoints:
+                flag = 0
+                for cont in contour:
+                    #print((coord[0], coord[1]), (cont[0], cont[1]))
+                    if flag == 0:
+                        if is_close(coord[0], coord[1], cont[0], cont[1], 80):
+                            #print("match", (coord[0], coord[1]), (cont[0], cont[1]))
+                            matches.append(1)
+                            flag = 1
+            if len(matches) == 2:
+                return f
+        print("Internal Error: associated feature not found")
+        exit(0)
+
+    '''Get the endpoints of the features, convert to grayscale, then slightly thin lines and threshold the image'''
     vertices = [v.endpoints[0] for v in DAG]
     height, width, channels = img.shape
-    erosion = cv2.dilate(img,np.ones((8,8),np.uint8),iterations = 1)
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
     img_conv = util.invert(gray)
     img_conv = cv2.erode(img_conv, np.ones((3,3),np.uint8), iterations = 2)
@@ -288,11 +330,10 @@ def extract_initial_contours(DAG, img):
     contourArray = np.vstack(contours[1]).squeeze()
     contourPoints = list(map(tuple, contourArray))
 
-    circle_size = height*width
 
     def isCloseToVert(point):
         for v in vertices:
-            if is_close(point[0], point[1], v[0], v[1], 50):
+            if is_close(point[0], point[1], v[0], v[1], 40):
                 return True
         return False
 
@@ -303,6 +344,7 @@ def extract_initial_contours(DAG, img):
     nonVertex_image = np.ones([height, width, 3],np.uint8)*255
     for p in points_without_vertices:
         cv2.circle(nonVertex_image, (p[0], p[1]), 1, (0,0,0), -1)
+
 
     '''thin out contour dots creating the lines, convert to grayscale and threshold the image again, then invert the colors so lines are white'''
     erosion = cv2.erode(nonVertex_image,np.ones((2,2),np.uint8),iterations = 1)
@@ -321,7 +363,7 @@ def extract_initial_contours(DAG, img):
     '''Said differently componentArray[0][0] holds coordinates of first feature, componentArray[1][0] the second feature, componentArray[2][0] the third...'''
     filledFeatures = []
 
-    for component in range(1,len(lab_stats)):
+    for component in range(1,len(lab_stats)): #EXCLUDE 0, IT IS BACKGROUND COMPONENT
         indices = np.where(img_labeled == component)
         indices = tuple(zip(*indices))
         indices = [t[::-1] for t in indices]
@@ -337,43 +379,10 @@ def extract_initial_contours(DAG, img):
 
     return filledFeatures
 
-def divideFeatures(features):
+def divideFeatures(features, img):
 
-    def iswWithin(bx1, bx2, by1, by2, p):
-        if bx1<p[0]<bx2 and by1<p[1]<by2:
-            return True
-        return False
-    def filter_points(pointsObjs, step_size = 75):
 
-        points = []
-        for p in pointsObjs:
-            points.append((p.x,p.y))
-
-        '''potential TODO Could get facier here and remove all points within x of any other point. This would help with vertical line deteciton later on'''
-        filtered_points = []
-        smallestX = min(points, key=lambda x:x[0])[0]; largestX = max(points, key=lambda x:x[0])[0]
-        smallestY = min(points, key=lambda x:x[1])[1]; largestY = max(points, key=lambda x:x[1])[1]
-        for x in range(smallestX,largestX,step_size):
-            for y in range(smallestY,largestY,step_size):
-                subPoints = []
-                for p in points:
-                    if iswWithin(x, x+step_size, y, y+step_size, p):
-                        subPoints.append(p)
-                xs = [point[0] for point in subPoints]
-                ys = [point[1] for point in subPoints]
-                if xs:
-                    avg_x = statistics.mean(xs)
-                if ys:
-                    avg_y = statistics.mean(ys)
-                else:
-                    avg_x, avg_y = 0,0
-                if avg_x != 0 and avg_y !=0: filtered_points.append((avg_x, avg_y))
-
-        filteredPointObjs = []
-        for p in filtered_points:
-            filteredPointObjs.append(Point(p[0],p[1]))
-
-        return filteredPointObjs
+    height, width, channels = img.shape
     def closestTo(anchor, points):
         closestDist = int(math.sqrt((points[0][0]-anchor[0])**2 + (points[0][1]-anchor[1])**2))
         closestPoint = points[0]
@@ -405,18 +414,20 @@ def divideFeatures(features):
                 firstHalfPoints = sortedFiltered[:len(sortedFiltered)//2]; secondHalfPoints = sortedFiltered[len(sortedFiltered)//2:];
                 feature1 = Feature(firstHalfPoints[0].x, firstHalfPoints[0].y,firstHalfPoints[len(firstHalfPoints)-1].x, firstHalfPoints[len(firstHalfPoints)-1].y)
                 feature1.filteredPoints = firstHalfPoints
-                feature1.orderNum = f.orderNum
 
                 feature2 = Feature(secondHalfPoints[0].x, secondHalfPoints[0].y,secondHalfPoints[len(secondHalfPoints)-1].x, secondHalfPoints[len(secondHalfPoints)-1].y)
                 feature2.filteredPoints = secondHalfPoints
-                feature2.orderNum = f.orderNum
 
-                endpointOrder = sorted([feature1.endpoints, feature2.endpoints], key=clockwiseangle_and_distance)
-                print(endpointOrder)
+                endpointOrder = sorted([feature1.endpoints, feature2.endpoints], key=lambda point: clockwiseangle(np.asarray(point), height, width))
 
+                if feature1.endpoints[0] == endpointOrder[0][0] or feature1.endpoints[0] == endpointOrder[0][1]:
+                    feature1.orderNum = f.orderNum
+                    feature2.orderNum = f.orderNum + .5
+                else:
+                    feature2.orderNum = f.orderNum
+                    feature1.orderNum = f.orderNum + .5
 
-                newFeatureSet.append(feature_1); newFeatureSet.append(feature_2)
-            #closest_toAvg = closestTo(AveragePoint, f.filteredPoints)
+                newFeatureSet.append(feature1); newFeatureSet.append(feature2)
         else:
             f.filteredPoints = filter_points(f.points)
             newFeatureSet.append(copy.deepcopy(f))
@@ -608,9 +619,6 @@ def createSubFeatures(features):
             curveObj = Curve(f.x1, f.y1, x_cp, y_cp, f.x2, f.y2, f.orderNum)
             subFeatures.append(curveObj)
 
-    assignment = random.randint(0, 1000)
-    cv2.imwrite('/Users/theodoreseem/res.Network/Curve_Integration/test/test' + str(assignment) + '.png', new_image)
-
     return subFeatures
 
 def createImageList(subFeatures):
@@ -682,22 +690,12 @@ def cleanAndBuild(file, imageStore):
     output_RIL =  master_Directory + "ril_outputs/" + file + ".png"
     output_cleaned =  master_Directory + "cleaned_images/" + file + ".png"
 
-    imageCleaned = clean_Image(input_Image)
+    imageCleaned = clean_Image(input_Image, file)
     image_vertices = retrieveVertices(imageCleaned)
-
-
-    assignment = random.randint(0, 1000)
-    for v in image_vertices:
-        cv2.circle(imageCleaned, (v[0], v[1]), 10, (0, 0, 255), -1)
-    cv2.imwrite(master_Directory + 'test2/testing' + str(assignment) + '.png', imageCleaned)
-
-
     DAG = createDAG(image_vertices, imageCleaned)
     initialFeatures = extract_initial_contours(DAG, imageCleaned)
-    refinedFeatures = divideFeatures(initialFeatures)
+    refinedFeatures = divideFeatures(initialFeatures, imageCleaned)
     subFeatures = createSubFeatures(refinedFeatures)
-    for s in subFeatures:
-        print(s.distance, s.degrees)
     imageList = createImageList(subFeatures)
     if 'NO IMG' not in imageList:
         createRIL(imageList, output_RIL)
@@ -721,6 +719,13 @@ def cleanAndBuild(file, imageStore):
 #            cv2.circle(new_image, (m[0], m[1]), 10, (0,0,255), -1)
 #    assignment = random.randint(0, 1000)
 #    cv2.imwrite('/Users/theodoreseem/res.Network/Curve_Integration/test/test' + str(assignment) + '.png', new_image)
+
+
+#use to print out corner placement images
+    #  assignment = random.randint(0, 1000)
+    #    for v in image_vertices:
+    #       cv2.circle(imageCleaned, (v[0], v[1]), 10, (0, 0, 255), -1)
+    #    cv2.imwrite(master_Directory + 'test2/testing' + str(assignment) + '.png', imageCleaned)
 
 #Depricated
 def createXML(lines, output_file, height): #SUBSET FOR ONLY LINES
@@ -780,6 +785,6 @@ if __name__ == "__main__":
         cleanAndBuild(file, "")
     else:
         files = [f[:-5] for f in listdir(master_Directory + imgStore) if f != '.DS_Store']
-        for count, file in enumerate(files[10:]):
+        for count, file in enumerate(files):
             print("#", count, "- Processing: ", file)
             cleanAndBuild(file, imgStore)
