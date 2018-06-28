@@ -720,7 +720,7 @@ def cleanAndBuild(file, imageStore):
 
     imageList = createImageList(subFeatures)
 
-    if 'No IMG' not in imageList:
+    if 'NO IMG' not in imageList:
         createRIL(imageList, output_RIL)
         createRSL(subFeatures, output_RSL)
     else:
