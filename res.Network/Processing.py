@@ -11,6 +11,7 @@ import numpy.polynomial.polynomial as poly
 from skimage import util
 import re
 import copy
+from numpy import warnings
 from PIL import Image
 import statistics
 import random
@@ -51,8 +52,8 @@ class Line(Feature):
 
     orderNum = ...;
 
-    def __init__(self, x1, y1, x2, y2, order):
-        self.x1 = x1; self.y1 = y1; self.x2 = x2; self.y2 = y2
+    def __init__(self, lx1, ly1, lx2, ly2, order):
+        self.lx1 = lx1; self.ly1 = ly1; self.lx2 = lx2; self.ly2 = ly2
 
         def calc_degrees(angle):
             if angle > 0:
@@ -61,19 +62,19 @@ class Line(Feature):
             if degree == 360: degree = 0
             return degree
 
-        Feature.__init__(self,x1,y1,x2,y2)
-        self.angle = round(math.atan2(y2-y1, x2-x1),2)*-1
+        Feature.__init__(self,lx1,ly1,lx2,ly2)
+        self.angle = round(math.atan2(ly2-ly1, lx2-lx1),2)*-1
         self.degrees = calc_degrees(self.angle)
-        self.distance = my_round(int(math.sqrt((x2-x1)**2 + (y2-y1)**2)),5)
+        self.distance = my_round(int(math.sqrt((lx2-lx1)**2 + (ly2-ly1)**2)),5)
         self.orderNum = order
-        self.endpoints = (x1,y1),(x2,y2)
+        self.endpoints = (lx1,ly1),(lx2,ly2)
 
 class Curve(Feature):
 
     orderNum = ...;
 
-    def __init__(self, x1, y1, x2, y2, x3, y3, order):
-        self.x1 = x1; self.y1 = y1; self.x2 = x2; self.y2 = y2; self.x3 = x3; self.y3 = y3
+    def __init__(self, cx1, cy1, cx2, cy2, cx3, cy3, order):
+        self.cx1 = cx1; self.cy1 = cy1; self.cx2 = cx2; self.cy2 = cy2; self.cx3 = cx3; self.cy3 = cy3
 
         def my_round(x, roundNum):
             return round(x/roundNum)*roundNum
@@ -83,14 +84,15 @@ class Curve(Feature):
                 return(int(angle*57.2958))
             return(int(360 - abs(angle*57.2958)))
 
-        Feature.__init__(self,x1,y1,x3,y3)
+        Feature.__init__(self,cx1,cy1,cx3,cy3)
 
         #second angle calc due to control points order
-        self.angle = round(math.atan2(y2-y1, x2-x1),2)*-1
-        self.distance = my_round(int(math.sqrt((x2-x1)**2 + (y2-y1)**2)),5)
+        self.angle = round(math.atan2(cy2-cy1, cx2-cx1),2)*-1
+        self.distance = my_round(int(math.sqrt((cx2-cx1)**2 + (cy2-cy1)**2)),5)
         self.degrees = calc_degrees(self.angle);
         self.orderNum = order;
-        self.endpoints = (x1,y1),(x3,y3)
+        self.endpoints = (cx1,cy1),(cx3,cy3)
+        print(self.cx2, self.cy2)
 
         #Depricated from a time when calculating cubic curves and nto quadratic curves
             #self.distance1 = my_round(int(math.sqrt((x2-x1)**2 + (y2-y1)**2)),5); self.distance2 = my_round(int(math.sqrt((x2-x3)**2 + (y2-y3)**2)),5);
@@ -108,7 +110,7 @@ class Point:
 def my_round(x, roundNum):
     return round(x/roundNum)*roundNum
 
-def filter_points(pointsObjs, step_size = 75):
+def filter_points(pointsObjs, step_size = 20):
 
     def isWithin(bx1, bx2, by1, by2, p):
         if bx1<p[0]<bx2 and by1<p[1]<by2:
@@ -119,7 +121,7 @@ def filter_points(pointsObjs, step_size = 75):
     for p in pointsObjs:
         points.append((p.x,p.y))
 
-    '''potential TODO Could get facier here and remove all points within x of any other point. This would help with vertical line deteciton later on'''
+    '''potential TODO Could get fancier here and remove all points within x of any other point. This would help with vertical line deteciton later on'''
     filtered_points = []
     smallestX = min(points, key=lambda x:x[0])[0]; largestX = max(points, key=lambda x:x[0])[0]
     smallestY = min(points, key=lambda x:x[1])[1]; largestY = max(points, key=lambda x:x[1])[1]
@@ -156,7 +158,7 @@ def collinear_exact(Points):
         if area!=0:
             return False
     return True
-def collinear_approx(Points):
+def collinear_approx(Points, var):
     Points.sort(key=lambda x: x[0])
     x1, y1 = Points[0]
     x2, y2 = Points[len(Points)-1]
@@ -167,7 +169,7 @@ def collinear_approx(Points):
         num = abs(y_diff*x3 - x_diff*y3 + x2*y1 - y2*x1)
         den = math.sqrt(y_diff**2 + x_diff**2)
         dist = num/den
-        if dist>4: return False
+        if dist>var: return False
     return True
 
 def floor_round(x, roundNum):
@@ -308,7 +310,7 @@ def extract_initial_contours(DAG, img):
                 for cont in contour:
                     #print((coord[0], coord[1]), (cont[0], cont[1]))
                     if flag == 0:
-                        if is_close(coord[0], coord[1], cont[0], cont[1], 80):
+                        if is_close(coord[0], coord[1], cont[0], cont[1], 50):
                             #print("match", (coord[0], coord[1]), (cont[0], cont[1]))
                             matches.append(1)
                             flag = 1
@@ -333,7 +335,7 @@ def extract_initial_contours(DAG, img):
 
     def isCloseToVert(point):
         for v in vertices:
-            if is_close(point[0], point[1], v[0], v[1], 40):
+            if is_close(point[0], point[1], v[0], v[1], 35):
                 return True
         return False
 
@@ -402,16 +404,19 @@ def divideFeatures(features, img):
 
 
     for f in features:
-        if f.distance > 200:
-            f.filteredPoints  = filter_points(f.points);
-            f.filteredPoints.extend([Point(f.endpoints[0][0], f.endpoints[0][1]),Point(f.endpoints[1][0], f.endpoints[1][1])])
+        if f.distance > 50:
+            f.filteredPoints = filter_points(f.points);
+            #f.filteredPoints.extend([Point(f.endpoints[0][0], f.endpoints[0][1]),Point(f.endpoints[1][0], f.endpoints[1][1])])
             AveragePoint = filter_points(f.points, 100000)[0]
             indices = [(p.x,p.y) for p in f.filteredPoints]
-            if not collinear_approx(indices):   #if it is a curve
+            if not collinear_approx(indices, 15):   #if it is a curve
                 for p in f.filteredPoints:
                     p.slopetToAverage = round(math.atan2(AveragePoint.y-p.y, AveragePoint.x-p.x),2)*-1
                 sortedFiltered = sorted(f.filteredPoints, key=lambda p: p.slopetToAverage)
-                firstHalfPoints = sortedFiltered[:len(sortedFiltered)//2]; secondHalfPoints = sortedFiltered[len(sortedFiltered)//2:];
+                firstHalfPoints = sortedFiltered[:len(sortedFiltered)//2]
+                secondHalfPoints = sortedFiltered[len(sortedFiltered)//2:]
+
+
                 feature1 = Feature(firstHalfPoints[0].x, firstHalfPoints[0].y,firstHalfPoints[len(firstHalfPoints)-1].x, firstHalfPoints[len(firstHalfPoints)-1].y)
                 feature1.filteredPoints = firstHalfPoints
 
@@ -428,6 +433,9 @@ def divideFeatures(features, img):
                     feature1.orderNum = f.orderNum + .5
 
                 newFeatureSet.append(feature1); newFeatureSet.append(feature2)
+            else:
+                f.filteredPoints = filter_points(f.points)
+                newFeatureSet.append(copy.deepcopy(f))
         else:
             f.filteredPoints = filter_points(f.points)
             newFeatureSet.append(copy.deepcopy(f))
@@ -463,27 +471,6 @@ def createSubFeatures(features):
 
         xs = [x for x,y in points]
         ys = [y for x,y in points]
-
-        #xSample1 = points[0][0]; xSample2 = points[int(len(points)/2)][0] ; xSample3 = points[len(points)-1][0]
-        #if abs(xSample1-xSample2)<50 and abs(xSample1-xSample3)<50:
-        #    print("vertical line")
-        #    tmp = xs, ys
-        #    ys = tmp[0]; xs = tmp[1]
-        #    #polynomial = np.poly1d(np.polyfit(xs, ys, 3))
-        #    polynomial = np.poly1d(polyfit_with_fixed_points(4, xs , ys, [xs[0],xs[int(len(xs)/2)], xs[len(xs)-1]], [ys[0],ys[int(len(ys)/2)], ys[len(ys)-1]]))
-        #    ys = [polynomial(x) for x in xs]
-        #    tmp = xs, ys
-        #    ys = tmp[0]; xs = tmp[1]
-        #else:
-        #    #polynomial = np.poly1d(np.polyfit(xs, ys, 3))
-        #    polynomial = np.poly1d(polyfit_with_fixed_points(4, xs , ys, [xs[0],xs[int(len(xs)/2)], xs[len(xs)-1]], [ys[0],ys[int(len(ys)/2)], ys[len(ys)-1]]))
-        #    ys = [polynomial(x) for x in xs]
-
-        #polynomial = np.poly1d(polyfit_with_fixed_points(3, xs , ys, [xs[0],xs[int(len(xs)/2)], xs[len(xs)-1]], [ys[0],ys[int(len(ys)/2)], ys[len(ys)-1]]))
-
-
-
-        #polys = [(int(x),int(y)) for x,y in zip(xs,ys)]  #NEED TO GET THIS POLYNOMIAL LINE TO FIT BETTER
 
         ts = np.arange(0.0, 1.0, 1.0/len(points))
         # make the summation functions for A (16 of them)
@@ -571,10 +558,16 @@ def createSubFeatures(features):
             # y0p * x - y1p * x = y0p * x0 - y0 - y1p * x1 + y1
             # x = (y0p * x0 - y0 - y1p * x1 + y1) / (y0p - y1p)
 
+        #print(y2_prime, y1_prime)
+
         # Intersection point of tangents
-        x_cp = (y2_prime * x2 - y2 - y1_prime * x1 + y1) / (y2_prime - y1_prime);
+        if y2_prime - y1_prime == 0:
+            x_cp = 0
+        else:
+            x_cp = (y2_prime * x2 - y2 - y1_prime * x1 + y1) / (y2_prime - y1_prime);
         y_cp = y2_prime * x_cp - y2_prime * x2 + y2;
         return int(x_cp), int(y_cp)
+
     def needsTransform(points):
         #return abs(points[0][0]-points[int(len(points)/2)][0])<500 and abs(points[0][0]-points[-1][0])<500 #Assumption
         for p1 in points:
@@ -587,14 +580,14 @@ def createSubFeatures(features):
 
     for f in features:
         indices = [(p.x,p.y) for p in f.filteredPoints]
-        if collinear_approx(indices):
+        if collinear_approx(indices,5):
             lineObj = Line(f.x1, f.y1, f.x2, f.y2, f.orderNum)
             subFeatures.append(lineObj)
         else:
+            print("here")
             for p in f.filteredPoints:
                 cv2.circle(new_image, (p.x, p.y), 5, (255,0,0), -1)
             if needsTransform(f.filteredPoints):
-                print(f.endpoints)
                 is_vertical = True
                 xs = [p.x for p in f.filteredPoints]; ys = [p.y for p in f.filteredPoints]
                 tmp = xs, ys
@@ -602,7 +595,14 @@ def createSubFeatures(features):
             else:
                 xs = [p.x for p in f.filteredPoints]; ys = [p.y for p in f.filteredPoints]
 
-            polynomial = np.poly1d(np.polyfit(xs, ys, 4))
+            with warnings.catch_warnings():
+                warnings.filterwarnings('error')
+                try:
+                    polynomial = np.poly1d(np.polyfit(xs, ys, 4))
+                except np.RankWarning:
+                    polynomial = np.poly1d(np.polyfit(xs, ys, 3))
+
+
             ys = [int(polynomial(x)) for x in xs]
             if is_vertical:
                 tmp = xs, ys
@@ -613,8 +613,8 @@ def createSubFeatures(features):
                 cv2.circle(new_image, (p[0], p[1]), 5, (0,255,0), -1)
 
             x_cp, y_cp = calc_quadratic_bezier(polynomial,f.x1,f.x2)
-            cv2.line(new_image, (f.x1, f.y1), (x_cp, y_cp), (0,0,255), 5)
-
+            #x_cp = int((f.x1 + f.x2) / 2)
+            #y_cp = int((f.y1 + f.y2) / 2)
 
             curveObj = Curve(f.x1, f.y1, x_cp, y_cp, f.x2, f.y2, f.orderNum)
             subFeatures.append(curveObj)
@@ -627,14 +627,18 @@ def createImageList(subFeatures):
     for subF in subFeatures:
         if type(subF) == Line:
             featureMeasure = feat_ext_map[str(floor_round(subF.distance,distance_round))],int(abs(floor_round(subF.degrees,degree_round)))
+            #print("line", featureMeasure, subF.distance, subF.degrees, subF.endpoints, subF.orderNum)
             lineImage = line_Image_map[str(featureMeasure)]
-            #print(featureMeasure)
-            imageList.append(lineImage)
+            #print(lineImage)
+            if 'NO IMG' not in lineImage:
+                imageList.append(lineImage)
         else:
             featureMeasure = feat_ext_map[str(floor_round(subF.distance,distance_round))],int(abs(floor_round(subF.degrees,degree_round)))
+            #print("curve", featureMeasure,  subF.distance, subF.degrees, subF.endpoints, subF.orderNum)
             curveImage = curve_Image_map[str(featureMeasure)]
-            #print(featureMeasure)
-            imageList.append(curveImage)
+            #print(curveImage)
+            if 'NO IMG' not in curveImage:
+                imageList.append(curveImage)
 
     return imageList
 
@@ -648,8 +652,14 @@ def createRSL(subFeatures, outputRSL):
     openOutput.write("second-point\n")
 
     for subf in subFeatures:
-        wordOutput = "RSL-%s-%s" %(str(floor_round(float(subf.degrees),degree_round)),str(floor_round(float(subf.distance)*conversionShrinkage, distance_round)))
-        openOutput.write(wordOutput+ '\n')
+        if not subf.distance < 25: #Not included in RIL either because insignificant (so don't want a record a token for this feature either)
+            if type(subf) == Line:
+                wordOutput = "RSL-Line-%s-%s" %(str(floor_round(float(subf.degrees),degree_round)),str(floor_round(float(subf.distance)*conversionShrinkage, distance_round)))
+            else:
+                wordOutput = "RSL-Curve-%s-%s" % (str(floor_round(float(subf.degrees), degree_round)),str(floor_round(float(subf.distance) * conversionShrinkage, distance_round)))
+        else:
+            print(subf.distance)
+            openOutput.write(wordOutput+ '\n')
 
     openOutput.write("end-line")
     openOutput.close()
@@ -658,7 +668,7 @@ def createRIL(imageList, output_RIL):
 
     files = ['/Users/theodoreseem/res.Network/Hasy-images/' + image for image in imageList]
 
-    result = Image.new("RGB", (500, 100))
+    result = Image.new("RGB", (750, 100))
 
     for index, file in enumerate(files):
         path = os.path.expanduser(file)
@@ -685,41 +695,62 @@ def set_paths(dir):
 def cleanAndBuild(file, imageStore):
 
     input_Image = master_Directory + imageStore + "/" + file + ".JPEG"
-    output_XML =  master_Directory + "xml_outputs/" + file + ".val"
     output_RSL =  master_Directory + "rsl_outputs/" + file + ".gui"
     output_RIL =  master_Directory + "ril_outputs/" + file + ".png"
-    output_cleaned =  master_Directory + "cleaned_images/" + file + ".png"
 
     imageCleaned = clean_Image(input_Image, file)
     image_vertices = retrieveVertices(imageCleaned)
     DAG = createDAG(image_vertices, imageCleaned)
     initialFeatures = extract_initial_contours(DAG, imageCleaned)
+
+    imageContours = copy.deepcopy(imageCleaned)
+    for f in initialFeatures:
+        color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
+        for p in f.points:
+            cv2.circle(imageContours, (p.x, p.y), 2, color, -1)
+    cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/contours.png',imageContours)
+
+
     refinedFeatures = divideFeatures(initialFeatures, imageCleaned)
+
+
+    imageFiltered = copy.deepcopy(imageCleaned)
+    for f in refinedFeatures:
+        color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
+        for p in f.filteredPoints:
+            cv2.circle(imageFiltered, (p.x, p.y), 5, color, -1)
+    cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/filtered.png', imageFiltered)
+
     subFeatures = createSubFeatures(refinedFeatures)
-    imageList = createImageList(subFeatures)
-    if 'NO IMG' not in imageList:
-        createRIL(imageList, output_RIL)
-        createRSL(subFeatures, output_RSL)
-    else:
-        print("Skipping RIL Creation")
+
+    imageSubbed = copy.deepcopy(imageCleaned)
+    for f in subFeatures:
+        print(type(f))
+        color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
+        color2 = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
+        if type(f) == Line:
+            cv2.line(imageSubbed, (f.lx1, f.ly1), (f.lx2, f.ly2), color, 4)
+        else:
+            print((f.cx1, f.cy1), (f.cx2, f.cy2), (f.cx3, f.cy3))
+            cv2.line(imageSubbed, (f.cx1, f.cy1), (f.cx2, f.cy2), color, 4)
+            cv2.line(imageSubbed, (f.cx2, f.cy2), (f.cx3, f.cy3), color2, 4)
+    cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/subbed.png', imageSubbed)
 
 
-  #  height, width, channels = imageCleaned.shape
- #   new_image = np.ones((height,width,3), np.uint8)*255
-#    for f in range(len(initialFeatures)):
-#        featurePoints = initialFeatures[f][0]
-#        refinedPoints = refinedFeatures[f][0]
-#        delPoints = delineatedFeatures[f][0]
 
-#        for p in featurePoints:
-#            cv2.circle(new_image, (p[0], p[1]), 1, (255,0,0), -1)
-#        for m in refinedPoints:
-#            cv2.circle(new_image, (m[0], m[1]), 1, (0,255,0), -1)
-#        for m in delPoints:
-#            cv2.circle(new_image, (m[0], m[1]), 10, (0,0,255), -1)
-#    assignment = random.randint(0, 1000)
-#    cv2.imwrite('/Users/theodoreseem/res.Network/Curve_Integration/test/test' + str(assignment) + '.png', new_image)
 
+    #cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/test' + str(random.randint(0, 255)) + '.png', imageCleaned)
+    #imageList = createImageList(subFeatures)
+    #print(imageList)
+    #createRIL(imageList, output_RIL)
+    #createRSL(subFeatures, output_RSL)
+
+
+#for f in refinedFeatures:
+#        color = [random.randint(0, 255),random.randint(0, 255),random.randint(0, 255)]
+#        for p in f.filteredPoints:
+#            cv2.circle(imageCleaned, (p.x, p.y), 1, color, -1)
+#    cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/test' + str(random.randint(0, 255)) + '.png', imageCleaned)
 
 #use to print out corner placement images
     #  assignment = random.randint(0, 1000)
@@ -785,6 +816,6 @@ if __name__ == "__main__":
         cleanAndBuild(file, "")
     else:
         files = [f[:-5] for f in listdir(master_Directory + imgStore) if f != '.DS_Store']
-        for count, file in enumerate(files):
-            print("#", count, "- Processing: ", file)
+        for count, file in enumerate(files[:]):
+            print("\n #", count, "- Processing: ", file)
             cleanAndBuild(file, imgStore)

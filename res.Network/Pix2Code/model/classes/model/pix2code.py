@@ -6,9 +6,24 @@ from keras.layers import Input, Dense, Dropout, \
                          Conv2D, MaxPooling2D, Flatten
 from keras.models import Sequential, Model
 from keras.optimizers import RMSprop
+from keras.callbacks import ModelCheckpoint
 from keras import *
 from .Config import *
 from .AModel import *
+
+
+class WeightsSaver(Callback):
+    def __init__(self, model, N):
+        self.model = model
+        self.N = N
+        self.batch = 0
+
+    def on_batch_end(self, batch, logs={}):
+        if self.batch % self.N == 0:
+            name = 'batch%04d.h5' % self.batch
+            self.model.save_weights(name)
+            print("Saving", name)
+        self.batch += 1
 
 
 class pix2code(AModel):
@@ -62,11 +77,21 @@ class pix2code(AModel):
         self.model.compile(loss='categorical_crossentropy', optimizer=optimizer)
 
     def fit(self, images, partial_captions, next_words):
-        self.model.fit([images, partial_captions], next_words, shuffle=False, epochs=EPOCHS, batch_size=BATCH_SIZE, verbose=1)
+
+        filepath = "org-weights-epoch-{epoch:04d}--val_loss-{val_loss:.4f}--loss-{loss:.4f}.hdf5"
+        checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_weights_only=True, period=1)
+        callbacks_list = [checkpoint]
+
+        self.model.fit([images, partial_captions], next_words, shuffle=False, epochs=EPOCHS, callbacks=callbacks_list, batch_size=BATCH_SIZE, verbose=1)
         self.save()
 
     def fit_generator(self, generator, steps_per_epoch):
-        self.model.fit_generator(generator, steps_per_epoch=steps_per_epoch, epochs=EPOCHS, verbose=1)
+
+        filepath = "org-weights-epoch-{epoch:04d}--val_loss-{val_loss:.4f}--loss-{loss:.4f}.hdf5"
+        checkpoint = ModelCheckpoint(filepath, monitor='val_loss', verbose=1, save_weights_only=True, period=1)
+        callbacks_list = [checkpoint]
+
+        self.model.fit_generator(generator, steps_per_epoch=steps_per_epoch, callbacks=callbacks_list, epochs=EPOCHS, verbose=1)
         self.save()
 
     def predict(self, image, partial_caption):
