@@ -23,10 +23,8 @@ from sympy import Matrix
 
 #!! Patterns cant have double back curves, patterns cant have double back vertices
 
-## TODO: Fix the bezier curve calculation (Second point seems to be endpoint)
-## TODO: Fix DAG with new features (might need to add the endpoints to the calculation)
+## TODO: Fix the bezier curve calculation (It might just be that I need to invert the X,Y values when calculating because it seems to work for horizontal curves)
 
-## TODO: Clean up the code in both res.Network accounts (GitHub, AWS)
 ## TODO: RSL to XML compiler and update documentation
 ## TODO: Go and comment new parts of the code
 
@@ -92,7 +90,6 @@ class Curve(Feature):
         self.degrees = calc_degrees(self.angle);
         self.orderNum = order;
         self.endpoints = (cx1,cy1),(cx3,cy3)
-        print(self.cx2, self.cy2)
 
         #Depricated from a time when calculating cubic curves and nto quadratic curves
             #self.distance1 = my_round(int(math.sqrt((x2-x1)**2 + (y2-y1)**2)),5); self.distance2 = my_round(int(math.sqrt((x2-x3)**2 + (y2-y3)**2)),5);
@@ -300,18 +297,15 @@ def createDAG(vertices, img):
 
 def extract_initial_contours(DAG, img):
 
-    def findAssociatedFeature(contour, featureList):  # Only possible to find a single match per vertex (so needs 2 matches)
+    def findAssociatedFeature(contour, featureList):
 
         for f in featureList:
-            #print(f)
             matches = []
             for coord in f.endpoints:
                 flag = 0
                 for cont in contour:
-                    #print((coord[0], coord[1]), (cont[0], cont[1]))
                     if flag == 0:
                         if is_close(coord[0], coord[1], cont[0], cont[1], 50):
-                            #print("match", (coord[0], coord[1]), (cont[0], cont[1]))
                             matches.append(1)
                             flag = 1
             if len(matches) == 2:
@@ -412,7 +406,9 @@ def divideFeatures(features, img):
             if not collinear_approx(indices, 15):   #if it is a curve
                 for p in f.filteredPoints:
                     p.slopetToAverage = round(math.atan2(AveragePoint.y-p.y, AveragePoint.x-p.x),2)*-1
+
                 sortedFiltered = sorted(f.filteredPoints, key=lambda p: p.slopetToAverage)
+
                 firstHalfPoints = sortedFiltered[:len(sortedFiltered)//2]
                 secondHalfPoints = sortedFiltered[len(sortedFiltered)//2:]
 
@@ -433,6 +429,7 @@ def divideFeatures(features, img):
                     feature1.orderNum = f.orderNum + .5
 
                 newFeatureSet.append(feature1); newFeatureSet.append(feature2)
+
             else:
                 f.filteredPoints = filter_points(f.points)
                 newFeatureSet.append(copy.deepcopy(f))
@@ -584,9 +581,6 @@ def createSubFeatures(features):
             lineObj = Line(f.x1, f.y1, f.x2, f.y2, f.orderNum)
             subFeatures.append(lineObj)
         else:
-            print("here")
-            for p in f.filteredPoints:
-                cv2.circle(new_image, (p.x, p.y), 5, (255,0,0), -1)
             if needsTransform(f.filteredPoints):
                 is_vertical = True
                 xs = [p.x for p in f.filteredPoints]; ys = [p.y for p in f.filteredPoints]
@@ -612,9 +606,9 @@ def createSubFeatures(features):
             for p in polyPoints:
                 cv2.circle(new_image, (p[0], p[1]), 5, (0,255,0), -1)
 
-            x_cp, y_cp = calc_quadratic_bezier(polynomial,f.x1,f.x2)
-            #x_cp = int((f.x1 + f.x2) / 2)
-            #y_cp = int((f.y1 + f.y2) / 2)
+            #x_cp, y_cp = calc_quadratic_bezier(polynomial,f.x1,f.x2)
+            x_cp = int((f.x1 + f.x2) / 2)
+            y_cp = int((f.y1 + f.y2) / 2)
 
             curveObj = Curve(f.x1, f.y1, x_cp, y_cp, f.x2, f.y2, f.orderNum)
             subFeatures.append(curveObj)
@@ -627,18 +621,12 @@ def createImageList(subFeatures):
     for subF in subFeatures:
         if type(subF) == Line:
             featureMeasure = feat_ext_map[str(floor_round(subF.distance,distance_round))],int(abs(floor_round(subF.degrees,degree_round)))
-            #print("line", featureMeasure, subF.distance, subF.degrees, subF.endpoints, subF.orderNum)
             lineImage = line_Image_map[str(featureMeasure)]
-            #print(lineImage)
-            if 'NO IMG' not in lineImage:
-                imageList.append(lineImage)
+            imageList.append(lineImage)
         else:
             featureMeasure = feat_ext_map[str(floor_round(subF.distance,distance_round))],int(abs(floor_round(subF.degrees,degree_round)))
-            #print("curve", featureMeasure,  subF.distance, subF.degrees, subF.endpoints, subF.orderNum)
             curveImage = curve_Image_map[str(featureMeasure)]
-            #print(curveImage)
-            if 'NO IMG' not in curveImage:
-                imageList.append(curveImage)
+            imageList.append(curveImage)
 
     return imageList
 
@@ -652,32 +640,28 @@ def createRSL(subFeatures, outputRSL):
     openOutput.write("second-point\n")
 
     for subf in subFeatures:
-        if not subf.distance < 25: #Not included in RIL either because insignificant (so don't want a record a token for this feature either)
             if type(subf) == Line:
                 wordOutput = "RSL-Line-%s-%s" %(str(floor_round(float(subf.degrees),degree_round)),str(floor_round(float(subf.distance)*conversionShrinkage, distance_round)))
             else:
                 wordOutput = "RSL-Curve-%s-%s" % (str(floor_round(float(subf.degrees), degree_round)),str(floor_round(float(subf.distance) * conversionShrinkage, distance_round)))
-        else:
-            print(subf.distance)
+
             openOutput.write(wordOutput+ '\n')
 
-    openOutput.write("end-line")
     openOutput.close()
 
 def createRIL(imageList, output_RIL):
 
     files = ['/Users/theodoreseem/res.Network/Hasy-images/' + image for image in imageList]
 
-    result = Image.new("RGB", (750, 100))
+    result = Image.new("RGB", (900, 100))
 
     for index, file in enumerate(files):
         path = os.path.expanduser(file)
         img = Image.open(path)
         img.thumbnail((32, 32), Image.ANTIALIAS)
         x = 50 + (index * 35)
-        y = 33#index % 2 * 32
+        y = 33
         w, h = img.size
-        #print('pos {0},{1} size {2},{3}'.format(x, y, w, h))
         result.paste(img, (x, y, x + w, y + h))
 
     result.save(os.path.expanduser(output_RIL))
@@ -725,38 +709,22 @@ def cleanAndBuild(file, imageStore):
 
     imageSubbed = copy.deepcopy(imageCleaned)
     for f in subFeatures:
-        print(type(f))
         color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
         color2 = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
         if type(f) == Line:
             cv2.line(imageSubbed, (f.lx1, f.ly1), (f.lx2, f.ly2), color, 4)
         else:
-            print((f.cx1, f.cy1), (f.cx2, f.cy2), (f.cx3, f.cy3))
             cv2.line(imageSubbed, (f.cx1, f.cy1), (f.cx2, f.cy2), color, 4)
             cv2.line(imageSubbed, (f.cx2, f.cy2), (f.cx3, f.cy3), color2, 4)
     cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/subbed.png', imageSubbed)
 
+    imageList = createImageList(subFeatures)
 
-
-
-    #cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/test' + str(random.randint(0, 255)) + '.png', imageCleaned)
-    #imageList = createImageList(subFeatures)
-    #print(imageList)
-    #createRIL(imageList, output_RIL)
-    #createRSL(subFeatures, output_RSL)
-
-
-#for f in refinedFeatures:
-#        color = [random.randint(0, 255),random.randint(0, 255),random.randint(0, 255)]
-#        for p in f.filteredPoints:
-#            cv2.circle(imageCleaned, (p.x, p.y), 1, color, -1)
-#    cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/test' + str(random.randint(0, 255)) + '.png', imageCleaned)
-
-#use to print out corner placement images
-    #  assignment = random.randint(0, 1000)
-    #    for v in image_vertices:
-    #       cv2.circle(imageCleaned, (v[0], v[1]), 10, (0, 0, 255), -1)
-    #    cv2.imwrite(master_Directory + 'test2/testing' + str(assignment) + '.png', imageCleaned)
+    if 'No IMG' not in imageList:
+        createRIL(imageList, output_RIL)
+        createRSL(subFeatures, output_RSL)
+    else:
+        'Error in Pattern, excluding from pre-processing'
 
 #Depricated
 def createXML(lines, output_file, height): #SUBSET FOR ONLY LINES
