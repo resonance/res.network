@@ -22,11 +22,7 @@ from sympy import Matrix
 
 
 #!! Patterns cant have double back curves, patterns cant have double back vertices
-
 ## TODO: Fix the bezier curve calculation (It might just be that I need to invert the X,Y values when calculating because it seems to work for horizontal curves)
-
-## TODO: RSL to XML compiler and update documentation
-## TODO: Go and comment new parts of the code
 
 
 lineImage_mapping = ''; featureExt_mapping = ''; curveImage_mapping = ''; master_Directory = ''
@@ -84,7 +80,6 @@ class Curve(Feature):
 
         Feature.__init__(self,cx1,cy1,cx3,cy3)
 
-        #second angle calc due to control points order
         self.angle = round(math.atan2(cy2-cy1, cx2-cx1),2)*-1
         self.distance = my_round(int(math.sqrt((cx2-cx1)**2 + (cy2-cy1)**2)),5)
         self.degrees = calc_degrees(self.angle);
@@ -305,7 +300,7 @@ def extract_initial_contours(DAG, img):
                 flag = 0
                 for cont in contour:
                     if flag == 0:
-                        if is_close(coord[0], coord[1], cont[0], cont[1], 50):
+                        if is_close(coord[0], coord[1], cont[0], cont[1], 50):  #hard coded - make sure bigger than isCloseToVert distance
                             matches.append(1)
                             flag = 1
             if len(matches) == 2:
@@ -329,7 +324,7 @@ def extract_initial_contours(DAG, img):
 
     def isCloseToVert(point):
         for v in vertices:
-            if is_close(point[0], point[1], v[0], v[1], 35):
+            if is_close(point[0], point[1], v[0], v[1], 35): #hard coded
                 return True
         return False
 
@@ -389,11 +384,14 @@ def divideFeatures(features, img):
                 closestPoint = p
         return closestPoint
 
-    ''' Iterate through each feature and find the filtered points of it's contour points. This is done by evaluating 50x50 area dimensions of that feature area
+    ''' Iterate through each feature and find the filtered points of it's contour points. This is done by evaluating 20x20 area dimensions of that feature area
         and averaging all points which fall into that 50x50 grid location
-        If a feature's length is less than some (200) pixels in length, the sub pixels are populated as the endpoints (because no need to divide feature further)
+        If a feature's length is less than some (50) pixels in length, the sub pixels are populated as the endpoints (because no need to divide feature further)
     '''
 
+    '''Here we take the filtered points, calculate an average poitn (in hull of curve) and calculate angle from each point to average point
+        then the points are sorted by angle and divided up into two new features. The features are then ordered by the clockwise orientationof their enpoints and assigned a number for the DAG
+    '''
     newFeatureSet = []
 
 
@@ -440,6 +438,12 @@ def divideFeatures(features, img):
     return newFeatureSet
 
 def createSubFeatures(features):
+
+    '''
+    Here the features are categorized as a Line or Curve object and the line and curve features are created. To create a curve object, the middle point needs to be calculated as the bezier control point
+    so that is done first. A curve is (endpoint1.x, endpoint1.y, controlpoint1.x, controlpoint1.y, endoint2.x, endpoint2.y)
+
+    '''
 
 
     subFeatures = []
@@ -617,6 +621,12 @@ def createSubFeatures(features):
 
 def createImageList(subFeatures):
 
+    '''
+
+    Each sub features (line or curve) is fed through and put through 2 dictionaries, where they eventually produce a image list representing that feature.
+    The image list is a list of image names, not the RIL itself
+    '''
+
     imageList = []
     for subF in subFeatures:
         if type(subF) == Line:
@@ -631,6 +641,10 @@ def createImageList(subFeatures):
     return imageList
 
 def createRSL(subFeatures, outputRSL):
+
+    '''
+    The subfeatures list is fed through and for each subfeature a RSL token is generated and output to a RSL file
+    '''
 
     openOutput = open(outputRSL, "w")
 
@@ -651,6 +665,11 @@ def createRSL(subFeatures, outputRSL):
 
 def createRIL(imageList, output_RIL):
 
+    '''
+    For each image in the image list, it is printed to a PNG to create the RIL file
+
+    '''
+
     files = ['/Users/theodoreseem/res.Network/Hasy-images/' + image for image in imageList]
 
     result = Image.new("RGB", (900, 100))
@@ -667,6 +686,8 @@ def createRIL(imageList, output_RIL):
     result.save(os.path.expanduser(output_RIL))
 
 def set_paths(dir):
+
+
     global master_Directory; global lineImage_mapping;
     global featureExt_mapping;  global curveImage_mapping
 
@@ -687,26 +708,29 @@ def cleanAndBuild(file, imageStore):
     DAG = createDAG(image_vertices, imageCleaned)
     initialFeatures = extract_initial_contours(DAG, imageCleaned)
 
+
+    #OUTPUTS TO TEST FOLDER (SHOWS CONTOURS)
     imageContours = copy.deepcopy(imageCleaned)
     for f in initialFeatures:
         color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
         for p in f.points:
             cv2.circle(imageContours, (p.x, p.y), 2, color, -1)
-    cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/contours.png',imageContours)
+    cv2.imwrite(master_Directory + '/test/contours.png',imageContours)
 
 
     refinedFeatures = divideFeatures(initialFeatures, imageCleaned)
 
-
+    # OUTPUTS TO TEST FOLDER (SHOWS FILTERED POINTS)
     imageFiltered = copy.deepcopy(imageCleaned)
     for f in refinedFeatures:
         color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
         for p in f.filteredPoints:
             cv2.circle(imageFiltered, (p.x, p.y), 5, color, -1)
-    cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/filtered.png', imageFiltered)
+    cv2.imwrite(master_Directory + '/test/filtered.png', imageFiltered)
 
     subFeatures = createSubFeatures(refinedFeatures)
 
+    # OUTPUTS TO TEST FOLDER (SHOWS BEZIER CURVE CONTOL POINTS LINES)
     imageSubbed = copy.deepcopy(imageCleaned)
     for f in subFeatures:
         color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
@@ -716,7 +740,7 @@ def cleanAndBuild(file, imageStore):
         else:
             cv2.line(imageSubbed, (f.cx1, f.cy1), (f.cx2, f.cy2), color, 4)
             cv2.line(imageSubbed, (f.cx2, f.cy2), (f.cx3, f.cy3), color2, 4)
-    cv2.imwrite('/Users/theodoreseem/res.Network/res.Network/test/subbed.png', imageSubbed)
+    cv2.imwrite(master_Directory + 'test/subbed.png', imageSubbed)
 
     imageList = createImageList(subFeatures)
 

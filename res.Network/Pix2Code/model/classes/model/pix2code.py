@@ -12,18 +12,19 @@ from .Config import *
 from .AModel import *
 
 
-class WeightsSaver(Callback):
-    def __init__(self, model, N):
-        self.model = model
-        self.N = N
-        self.batch = 0
+#Used to output weight file after every batch along with the every epoch weight file
+#class WeightsSaver(Callback):
+#   def __init__(self, model, N):
+#        self.model = model
+#        self.N = N
+#        self.batch = 0
 
-    def on_batch_end(self, batch, logs={}):
-        if self.batch % self.N == 0:
-            name = 'batch%04d.h5' % self.batch
-            self.model.save_weights(name)
-            print("Saving", name)
-        self.batch += 1
+#    def on_batch_end(self, batch, logs={}):
+#        if self.batch % self.N == 0:
+#            name = 'batch%04d.h5' % self.batch
+#            self.model.save_weights(name)
+#            print("Saving", name)
+#        self.batch += 1
 
 
 class pix2code(AModel):

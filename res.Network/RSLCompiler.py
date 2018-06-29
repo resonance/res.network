@@ -66,8 +66,6 @@ if __name__ == "__main__":
         print("Error: not enough argument supplied: \n Processing.py <single/multi> <Image/Image_Directory>")
         exit(0)
 
-    #line_Image_map, feat_ext_map, curve_Image_map = loadDictionaries()
-
     if argv[0] == "single":
         file = imgStore[:-4]
         print("Compiling: ", file)
